@@ -61,3 +61,42 @@ Core library `claude_ax.py` written April 16-21, 2026.
 - [AXorcist](https://github.com/steipete/AXorcist) — Swift wrapper, MIT, async/await, fuzzy matching (potential future rewrite target)
 - [AXSwift](https://github.com/tmandry/AXSwift) — lighter Swift wrapper
 - Apple AXUIElement docs: https://developer.apple.com/documentation/applicationservices/axuielement
+
+## Code mode sidebar (discovered April 2026)
+
+### Structure
+- `New session ⌘N` — opens new Claude Code session (or folder picker if no workspace)
+- `Routines` — saved automations
+- Project names (e.g. `agreed-vision`) — with nested `New session in <project>`
+- `New session in Projects` — create session in Projects root
+
+### Task status prefixes in Code mode
+`Idle`, `Pull request merged` — more may exist, not fully surveyed
+
+### Inference rule
+`infer_current_mode()` returns `'code'` when neither `'New task ⌘N'` nor any `'New chat'`
+button is present in the sidebar. This is the correct inference since Code mode
+has `'New session ⌘N'` instead.
+
+### ⌘N behavior in Code mode
+Clicking `'New session ⌘N'` may open a folder-picker dialog ("Add another folder")
+if no workspace is loaded. In that case the session diff picks up the dialog title
+as a new session — benign for injection tests, but worth guarding in production.
+
+## Smoke test findings (smoke_handoff.py)
+
+### get_content_root() — blank pane fix
+Original code: `if role == 'AXWebArea' and kids:` — fails on new blank task/session panes
+which have an empty AXWebArea (no children until text is typed).
+Fix: `if role == 'AXWebArea':` — accept empty pane, then use `wait_for_text_area()` separately.
+
+### New task pane — suggestion chips in session list
+After opening a new CCw task, `find_nav_buttons()` picks up suggestion chip buttons
+('Clear active', 'Hide suggestions', 'Build an interactive dashboard', etc.)
+as "sessions". These have no status prefix and are not real tasks — filter if needed.
+
+### set_mode() — osascript vs CGEvent
+Raw CGEvent (`press_key`) is unreliable for mode switching — keystroke goes to
+wrong app if focus hasn't settled. Fix: use osascript System Events:
+  `tell application "System Events" to keystroke "2" using command down`
+This is now the default in `set_mode()`.

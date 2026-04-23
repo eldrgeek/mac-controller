@@ -453,8 +453,8 @@ def get_content_root(app_elem, timeout=5.0):
         if err == 0 and focused:
             role = get_attr(focused, 'AXRole')
             kids = get_attr(focused, 'AXChildren') or []
-            if role == 'AXWebArea' and kids:
-                return focused
+            if role == 'AXWebArea':
+                return focused  # accept even if empty — new blank pane has no children yet
         time.sleep(0.25)
     return None
 
@@ -582,18 +582,23 @@ MODE_DESCRIPTIONS = {'chat': 'Chat', 'cowork': 'Cowork', 'code': 'Code'}
 
 def set_mode(mode: str) -> bool:
     """Switch Claude Desktop to Chat (⌘1), Cowork (⌘2), or Code (⌘3).
-    Uses keyboard shortcut as primary; AX button click as fallback.
+    Uses osascript System Events for reliable keystroke delivery.
     """
+    import subprocess as _sp
     mode = mode.lower()
     key = MODE_KEYS.get(mode)
     if not key:
         print(f'ERROR: unknown mode {mode!r}. Use chat, cowork, or code.', file=sys.stderr)
         return False
-    activate_claude()
-    time.sleep(0.3)
-    press_key(key, modifiers=['cmd'])
-    time.sleep(0.4)
-    return True
+    # osascript is more reliable than CGEvent for focus-sensitive keystrokes
+    result = _sp.run([
+        'osascript',
+        '-e', 'tell application "Claude" to activate',
+        '-e', 'delay 0.4',
+        '-e', f'tell application "System Events" to keystroke "{key}" using command down',
+    ], capture_output=True, timeout=5)
+    time.sleep(0.6)
+    return result.returncode == 0
 
 
 def get_current_mode(win) -> 'str | None':
@@ -646,10 +651,28 @@ def list_tasks(win, status_filter: 'str | None' = None) -> list:
 
 
 def new_task(win) -> bool:
-    """Click 'New task ⌘N' or press ⌘N as fallback. Sleeps 0.8s for UI settle."""
-    ok = click_control(win, title='New task \u2318N', role='AXButton')
+    """Open a new session/task appropriate for the current mode.
+    - Cowork: clicks 'New task ⌘N'
+    - Code:   clicks 'New session ⌘N'
+    - Chat:   clicks button containing 'New chat'
+    Falls back to ⌘N via osascript in all cases.
+    Sleeps 0.8s for UI settle.
+    """
+    import subprocess as _sp
+    mode = infer_current_mode(win)
+    if mode == 'cowork':
+        ok = click_control(win, title='New task \u2318N', role='AXButton')
+    elif mode == 'code':
+        ok = click_control(win, title='New session \u2318N', role='AXButton')
+    else:
+        ok = click_control(win, contains='New chat', role='AXButton')
     if not ok:
-        press_key('n', modifiers=['cmd'])
+        _sp.run([
+            'osascript',
+            '-e', 'tell application "Claude" to activate',
+            '-e', 'delay 0.2',
+            '-e', 'tell application "System Events" to keystroke "n" using command down',
+        ], capture_output=True, timeout=5)
     time.sleep(0.8)
     return True
 
