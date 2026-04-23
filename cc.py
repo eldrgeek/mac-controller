@@ -39,6 +39,7 @@ import time
 import ApplicationServices as AS
 
 from claude_ax import (
+    infer_current_mode,
     activate_claude,
     click_control,
     cowork_safe_inject,
@@ -48,7 +49,6 @@ from claude_ax import (
     get_attr,
     get_composer_state,
     get_content_root,
-    get_current_mode,
     get_selected_session,
     inject_message,
     list_sessions,
@@ -94,7 +94,7 @@ def cmd_mode(args):
     ok = set_mode(args.mode)
     if ok:
         time.sleep(0.5)
-        current = get_current_mode(win)
+        current = infer_current_mode(win)
         _print({'mode_set': args.mode, 'detected_mode': current})
     return 0 if ok else 1
 
@@ -202,7 +202,7 @@ def cmd_inspect(args):
     what = args.what
 
     if what == 'mode':
-        _print({'current_mode': get_current_mode(win)})
+        _print({'current_mode': infer_current_mode(win)})
 
     elif what == 'sessions':
         sessions = [{'title': s['title'], 'selected': s['selected']}
@@ -233,7 +233,7 @@ def cmd_inspect(args):
                     for s in list_sessions(win)]
         selected = get_selected_session(win)
         _print({
-            'current_mode': get_current_mode(win),
+            'current_mode': infer_current_mode(win),
             'selected_session': selected['title'] if selected else None,
             'composer': get_composer_state(root),
             'session_count': len(sessions),

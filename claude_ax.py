@@ -623,11 +623,16 @@ def parse_task_status(title: str) -> 'tuple[str | None, str]':
 
 def list_tasks(win, status_filter: 'str | None' = None) -> list:
     """Return sidebar task buttons, optionally filtered by status prefix.
+    Skips bare section-filter labels (Scheduled, Live artifacts, Dispatch, etc.)
     Each entry: {'title', 'status', 'clean_title', 'selected', 'elem'}
     """
     results = []
     for btn in find_nav_buttons(win):
-        status, clean = parse_task_status(btn['title'])
+        title = btn['title']
+        status, clean = parse_task_status(title)
+        # Skip bare section-filter labels (no status prefix and matches known label)
+        if status is None and title in _SECTION_FILTER_LABELS:
+            continue
         if status_filter and status != status_filter.lower():
             continue
         results.append({
@@ -696,3 +701,35 @@ def cowork_safe_inject(win, msg: str, dispatch: bool = True) -> bool:
     if dispatch:
         return submit_prompt(win)
     return True
+
+
+# ── Mode detection (revised) ──────────────────────────────────────────────────
+# The Chat/Cowork/Code buttons don't expose AXSelected/AXValue when active —
+# React renders selection state only via CSS, invisible to AX.
+# We infer mode from what's present in the sidebar instead.
+
+_SECTION_FILTER_LABELS = {
+    'Scheduled', 'Live artifacts', 'Dispatch', 'Customize',
+    'Projects', 'Pinned', 'Recents', 'View all', 'New task \u2318N',
+}
+
+
+def infer_current_mode(win) -> 'str | None':
+    """Infer active mode from sidebar content (React doesn't expose tab state via AX).
+    - Cowork: 'New task ⌘N' button present
+    - Chat:   no 'New task ⌘N', but sidebar has 'New chat' or regular sessions
+    - Code:   neither of the above
+    Returns 'cowork', 'chat', 'code', or None.
+    """
+    buttons_with_titles = set()
+    for btn in find_nav_buttons(win):
+        buttons_with_titles.add(btn['title'])
+
+    if 'New task \u2318N' in buttons_with_titles:
+        return 'cowork'
+    # Chat mode has a 'New chat' button (may appear in UI buttons set, bypass that)
+    for _, elem in find_roles(win, ['AXButton'], max_depth=20):
+        title = get_attr(elem, 'AXTitle') or ''
+        if 'New chat' in title or 'New Chat' in title:
+            return 'chat'
+    return 'code'
