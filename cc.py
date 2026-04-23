@@ -243,6 +243,111 @@ def cmd_inspect(args):
     return 0
 
 
+def cmd_status(args):
+    """Full machine-readable status: Claude Desktop AX + relay + jobs + HUD.
+    Designed to give an LLM complete situational awareness in one call.
+    """
+    import urllib.request as _ur
+
+    def _fetch(url, timeout=1.5):
+        try:
+            r = _ur.urlopen(url, timeout=timeout)
+            return json.loads(r.read()), None
+        except Exception as e:
+            return None, str(e)
+
+    def _post(url, body, timeout=1.5):
+        try:
+            req = _ur.Request(url,
+                data=json.dumps(body).encode(),
+                headers={'Content-Type': 'application/json'},
+                method='POST')
+            r = _ur.urlopen(req, timeout=timeout)
+            return json.loads(r.read()), None
+        except Exception as e:
+            return None, str(e)
+
+    # ── Claude Desktop ────────────────────────────────────────────
+    win = find_claude_window()
+    desktop = {'available': False}
+    if win:
+        root = _content_root(win)
+        mode = infer_current_mode(win)
+        selected = get_selected_session(win)
+        composer = get_composer_state(root)
+        tasks = list_tasks(win)
+
+        # Group tasks by status — only include status-prefixed items
+        # Unprefixed items include UI buttons (tool-use, sidebar chrome) — skip them
+        by_status = {}
+        for t in tasks:
+            s = t['status']
+            if s is None:
+                continue   # skip unprefixed — includes tool-use buttons
+            by_status.setdefault(s, []).append(t['clean_title'])
+        # Trim done list — usually long
+        if 'done' in by_status:
+            by_status['done_recent'] = by_status.pop('done')[:5]
+
+        desktop = {
+            'available': True,
+            'mode': mode,
+            'selected_session': selected['title'] if selected else None,
+            'active_web_title': composer.get('active_web_title'),
+            'composer': {
+                'has_text_area': composer.get('has_text_area'),
+                'send_action': composer.get('send_action'),
+                'has_draft': bool((composer.get('draft_text') or '').strip()
+                                  and composer.get('draft_text', '').strip() != 'Reply...'),
+            },
+            'tasks': by_status,
+            'task_count': len(tasks),
+        }
+
+    # ── Relay (localhost:3333) ────────────────────────────────────
+    relay_status, relay_err = _fetch('http://localhost:3333/status')
+    relay = {'up': relay_status is not None}
+    if relay_status:
+        relay.update(relay_status)
+    else:
+        relay['error'] = relay_err
+
+    # ── Jobs ─────────────────────────────────────────────────────
+    jobs_data, _ = _fetch('http://localhost:3333/jobs/status?filter=all')
+    raw_jobs = (jobs_data or {}).get('jobs', [])
+    # Summarise: active (non-done) first, cap at 10
+    active_jobs = [j for j in raw_jobs if j.get('status') not in ('done', 'error')]
+    recent_done = [j for j in raw_jobs if j.get('status') in ('done', 'error')][:3]
+    jobs = {
+        'active': [{'id': j['id'], 'title': j.get('title'), 'status': j.get('status'),
+                    'step': j.get('step')} for j in active_jobs[:8]],
+        'recent_done': [{'id': j['id'], 'title': j.get('title'), 'status': j.get('status')}
+                        for j in recent_done],
+        'total': len(raw_jobs),
+    }
+
+    # ── Chat channel ─────────────────────────────────────────────
+    chat_status, _ = _fetch('http://localhost:3333/chat/status')
+    chat = chat_status or {'available': False}
+
+    # ── HUD (localhost:3334) ──────────────────────────────────────
+    hud_status, hud_err = _fetch('http://localhost:3334/wv-status')
+    hud = {'up': hud_status is not None}
+    if hud_status:
+        hud.update(hud_status)
+    else:
+        hud['error'] = hud_err
+
+    _print({
+        'claude_desktop': desktop,
+        'relay': relay,
+        'jobs': jobs,
+        'chat_channel': chat,
+        'hud': hud,
+    })
+    return 0
+
+
 # ── Argument parser ───────────────────────────────────────────────────────────
 
 def build_parser():
@@ -277,6 +382,8 @@ def build_parser():
     rec.add_argument('--cowork-safe', action='store_true')
     rec.add_argument('--no-dispatch', action='store_true')
 
+    sub.add_parser('status', help='Full machine-readable status: Desktop + relay + jobs + HUD')
+
     ins = sub.add_parser('inspect', help='Inspect Claude Desktop AX state')
     ins.add_argument('what',
                      choices=['overview', 'sessions', 'tasks', 'composer', 'mode', 'buttons'],
@@ -293,6 +400,7 @@ def main(argv=None):
         'inject': cmd_inject,
         'recent': cmd_recent,
         'inspect': cmd_inspect,
+        'status': cmd_status,
     }
     return handlers[args.command](args)
 
