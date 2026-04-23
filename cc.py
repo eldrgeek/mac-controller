@@ -389,8 +389,51 @@ def build_parser():
                      choices=['overview', 'sessions', 'tasks', 'composer', 'mode', 'buttons'],
                      nargs='?', default='overview')
 
+
+    ha = sub.add_parser('hud-ask', help='Show message in HUD with Confirm/Failed/Partial buttons')
+    ha.add_argument('message', help='Message to display in the HUD')
+    ha.add_argument('--timeout', type=int, default=30, help='Seconds to wait for response (default 30)')
+
     return parser
 
+
+
+
+def cmd_hud_ask(args):
+    """Show a message in the HUD and wait for Confirm/Failed/Partial response."""
+    import urllib.request as _ur
+    import urllib.error
+
+    message = args.message
+    timeout = args.timeout
+
+    # POST /hud/ask
+    body = json.dumps({'message': message, 'timeout': timeout}).encode()
+    req = _ur.Request('http://localhost:3333/hud/ask', data=body,
+                      headers={'Content-Type': 'application/json'}, method='POST')
+    try:
+        resp = _ur.urlopen(req, timeout=5)
+        ask_id = json.loads(resp.read())['id']
+    except Exception as e:
+        _print({'error': f'HUD not reachable: {e}'}); return 3
+
+    # Poll for response
+    import time as _time
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        try:
+            r = _ur.urlopen(f'http://localhost:3333/hud/response/{ask_id}', timeout=2)
+            data = json.loads(r.read())
+            if data.get('status') == 'answered':
+                response = data['response']
+                _print({'response': response})
+                return {'confirm': 0, 'failed': 1, 'partial': 2}.get(response, 3)
+        except Exception:
+            pass
+        _time.sleep(0.5)
+
+    _print({'response': 'timeout'})
+    return 3
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
@@ -401,6 +444,7 @@ def main(argv=None):
         'recent': cmd_recent,
         'inspect': cmd_inspect,
         'status': cmd_status,
+        'hud-ask': cmd_hud_ask,
     }
     return handlers[args.command](args)
 
