@@ -38,6 +38,16 @@ Native window walk only returns ~14 elements (not 700+). Fix in `get_content_roo
 3. Wait for `AXWebArea` with children — use that as content root
 Requires Claude to be frontmost app.
 
+## Use this, not osascript
+
+`cc.py` supersedes ad-hoc osascript keystroke injection for any Claude Desktop control task. Common mistakes that this project fixes:
+
+1. `osascript -e 'keystroke "msg"'` types text but doesn't submit — Cmd+Return is required and easily forgotten.
+2. Keystroke injection corrupts Mike's in-flight draft. The `cc inject --cowork-safe` flow notifies the HUD and copies any existing draft to clipboard before replacing.
+3. Notifications via `display notification` are easy to miss; `cc hud-ask` puts them in the HUD with explicit Confirm/Failed/Partial buttons.
+
+If you find yourself reaching for `osascript -e 'tell application "System Events" to keystroke ...'`, stop and use `cc.py` instead. The osascript belt-and-suspenders activation in `set_mode()` (below) is intentional and different — it uses System Events to send Cmd+1/2/3 because raw CGEvent has focus-timing issues. That's the only place osascript belongs.
+
 ## Python environment
 Use `/opt/homebrew/bin/python3` (has PyObjC installed).
 ```bash
