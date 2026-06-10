@@ -44,7 +44,9 @@ Requires Claude to be frontmost app.
 
 1. `osascript -e 'keystroke "msg"'` types text but doesn't submit — Cmd+Return is required and easily forgotten.
 2. Keystroke injection corrupts Mike's in-flight draft. The `cc inject --cowork-safe` flow notifies the HUD and copies any existing draft to clipboard before replacing.
-3. Notifications via `display notification` are easy to miss; `cc hud-ask` puts them in the HUD with explicit Confirm/Failed/Partial buttons.
+3. Notifications via `display notification` are easy to miss; `cc hud-ask` surfaces them with explicit Confirm/Failed/Partial buttons.
+
+> **HUD retired (2026-06-10):** the Mac HUD overlay (`com.yeshie.hud` / `yeshie/scripts/hud.py` on :3334) is disabled — it kept force-surfacing on an AFK timer. `cc hud-ask` keeps the exact same CLI contract, but asks now display in **Pulse** (Pixel app + web at :8088), which polls the relay's `GET /hud/asks` and answers via `POST /hud/response/:id`. The relay (:3333) remains the broker; nothing about cc.py's interface changed.
 
 If you find yourself reaching for `osascript -e 'tell application "System Events" to keystroke ...'`, stop and use `cc.py` instead. The osascript belt-and-suspenders activation in `set_mode()` (below) is intentional and different — it uses System Events to send Cmd+1/2/3 because raw CGEvent has focus-timing issues. That's the only place osascript belongs.
 
