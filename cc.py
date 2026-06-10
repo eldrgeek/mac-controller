@@ -407,6 +407,13 @@ def cmd_hud_ask(args):
     message = args.message
     timeout = args.timeout
 
+    # Make sure the HUD panel is on-screen — otherwise the user can't click anything
+    # and we just block until timeout. Best-effort; fall through if hud.py isn't running.
+    try:
+        _ur.urlopen(_ur.Request('http://localhost:3334/show', method='POST'), timeout=1).read()
+    except Exception:
+        pass
+
     # POST /hud/ask
     body = json.dumps({'message': message, 'timeout': timeout}).encode()
     req = _ur.Request('http://localhost:3333/hud/ask', data=body,
