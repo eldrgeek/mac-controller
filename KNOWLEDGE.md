@@ -61,11 +61,16 @@ Use `/opt/homebrew/bin/python3` (has PyObjC installed).
 
 ## Origins
 Extracted from `~/Projects/yeshie/scripts/` (April 2026).
-Core library `claude_ax.py` written April 16-21, 2026.
+Core library `claude_ax.py` first committed 2026-04-21 (`yeshie` commit c90012b4,
+verified 2026-07-04 WQ-124 — mac-controller's own git history only starts at the
+2026-04-23 extraction, so check `yeshie`'s log for pre-extraction dates). Precursor
+work (`ax-inject.py`) started 2026-04-16.
 1.3561 regression fix: commit c90012b4, April 21, 2026.
 
 ## Related projects
-- `yeshie/` — parent project (browser RPA + recipes); scripts still symlinked there
+- `yeshie/` — parent project (browser RPA + recipes); `yeshie/scripts/claude_ax.py` is a
+  regular file copy (drifted from source since Jun 16, 2026 — not a symlink, verified
+  2026-07-04 WQ-124; consider restoring the symlink to stop the two copies diverging)
 - `cc-bridge-mcp/` — MCP server for remote shell/git access from Claude Desktop
 - `claude-collab-bridge/` — multi-agent A2A bridge (Claude + Codex + OpenAI)
 
