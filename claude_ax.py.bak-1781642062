@@ -326,26 +326,12 @@ def set_prompt_text(win, text):
     return True
 
 
-# Empty-composer placeholders echoed as AXValue by the web view. An empty
-# composer must NOT be mistaken for a user draft, or focus-gated automation
-# would defer forever whenever the composer is idle.
-_COMPOSER_PLACEHOLDERS = {'reply...', 'reply\u2026', 'write a message\u2026',
-                          'write a message...'}
-
-
 def get_composer_state(win):
     text_area = find_text_area(win)
     send_btn = find_send_button(win)
-    raw = (get_attr(text_area, 'AXValue') or '') if text_area else ''
-    placeholder = (get_attr(text_area, 'AXPlaceholderValue') or '') if text_area else ''
-    stripped = raw.strip()
-    is_empty = (not stripped
-                or stripped == placeholder.strip()
-                or stripped.lower() in _COMPOSER_PLACEHOLDERS)
     return {
         'has_text_area': bool(text_area),
-        'draft_text': '' if is_empty else raw,
-        'placeholder': placeholder,
+        'draft_text': (get_attr(text_area, 'AXValue') or '') if text_area else '',
         'send_action': send_btn[0] if send_btn else None,
         'active_web_title': get_active_web_title(win),
     }

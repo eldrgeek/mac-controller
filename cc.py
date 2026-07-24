@@ -19,6 +19,10 @@ Commands:
     --no-dispatch                 Set text but don't submit
     --cowork-safe                 HUD notify + copy draft if composer has content
   inspect <overview|sessions|tasks|composer|mode|buttons>
+  afk-status                      Show automation-lock state + live idle seconds
+  afk-wait --reason "..."         Block (bounded) until team_active is granted
+  afk-set-team --reason "..."     Request team_active now (fails unless idle >= threshold)
+  afk-release                     Hand control back to user_active (always allowed)
 
 Examples:
   cc.py mode cowork
@@ -38,6 +42,7 @@ import time
 
 import ApplicationServices as AS
 
+import afk_guard
 from claude_ax import (
     infer_current_mode,
     activate_claude,
@@ -394,6 +399,19 @@ def build_parser():
     ha.add_argument('message', help='Message to display in the HUD')
     ha.add_argument('--timeout', type=int, default=30, help='Seconds to wait for response (default 30)')
 
+    sub.add_parser('afk-status', help='Show automation-lock state + live idle seconds')
+
+    aw = sub.add_parser('afk-wait', help='Request team_active and block until granted or timeout')
+    aw.add_argument('--reason', default='', help='What the automation is about to do')
+    aw.add_argument('--timeout', type=float, default=afk_guard.IDLE_THRESHOLD_S + 10,
+                    help='Max seconds to wait (default threshold+10)')
+
+    ast_ = sub.add_parser('afk-set-team',
+                          help='Request team_active immediately (fails unless already idle >= threshold)')
+    ast_.add_argument('--reason', default='', help='What the automation is about to do')
+
+    sub.add_parser('afk-release', help='Immediately hand control back to user_active (always allowed)')
+
     return parser
 
 
@@ -442,6 +460,49 @@ def cmd_hud_ask(args):
     _print({'response': 'timeout'})
     return 3
 
+def cmd_afk_status(args):
+    """Print current AFK-guard lock state + live idle seconds."""
+    data = afk_guard.read_state()
+    data['idle_seconds'] = round(afk_guard.idle_seconds(), 1)
+    data['idle_threshold_s'] = afk_guard.IDLE_THRESHOLD_S
+    data['is_afk'] = afk_guard.is_afk()
+    _print(data)
+    return 0
+
+
+def cmd_afk_wait(args):
+    """Request team_active and block (bounded) until granted or timeout.
+    This is the call automation scripts should make before doing any
+    interactive AX/keyboard/mouse work — see afk_guard.py contract."""
+    try:
+        data = afk_guard.ensure_team_control(
+            reason=args.reason or '', timeout=args.timeout)
+        _print(data)
+        return 0
+    except afk_guard.AfkGuardError as e:
+        _print({'error': str(e)})
+        return 1
+
+
+def cmd_afk_set_team(args):
+    """Request team_active immediately (fails unless already idle >=
+    threshold — this does NOT bypass the gate; use the overlay badge for
+    an explicit Mike-driven handoff)."""
+    try:
+        data = afk_guard.request_team_control(reason=args.reason or '')
+        _print(data)
+        return 0
+    except afk_guard.AfkGuardError as e:
+        _print({'error': str(e)})
+        return 1
+
+
+def cmd_afk_release(args):
+    """Immediately hand control back to user_active. Always allowed."""
+    _print(afk_guard.release_to_user())
+    return 0
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     handlers = {
@@ -452,6 +513,10 @@ def main(argv=None):
         'inspect': cmd_inspect,
         'status': cmd_status,
         'hud-ask': cmd_hud_ask,
+        'afk-status': cmd_afk_status,
+        'afk-wait': cmd_afk_wait,
+        'afk-set-team': cmd_afk_set_team,
+        'afk-release': cmd_afk_release,
     }
     return handlers[args.command](args)
 

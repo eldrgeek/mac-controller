@@ -79,6 +79,70 @@ work (`ax-inject.py`) started 2026-04-16.
 - [AXSwift](https://github.com/tmandry/AXSwift) — lighter Swift wrapper
 - Apple AXUIElement docs: https://developer.apple.com/documentation/applicationservices/axuielement
 
+## AFK/team-control contract (added 2026-07-18) — read before any interactive automation
+
+**Every automation script that does interactive AX/keyboard/mouse work against a
+foreground app (Claude Desktop, Chrome, anything) must go through `afk_guard.py`
+first.** This supersedes ad-hoc `cc status` checks — `cc status` describes AX
+tree state, not whether it's currently *safe* to click around on Mike's screen.
+Triggered by a 2026-07-17 incident: a debugging agent fired live AX clicks
+against Claude Desktop while Mike may have been mid-typing.
+
+### State machine
+Single source of truth: `~/.mac-controller/automation-lock.json`
+```json
+{"state": "user_active" | "team_active", "since": "<ISO8601>", "reason": "<free text>"}
+```
+- `user_active → team_active`: only when system-wide idle time
+  (`Quartz.CGEventSourceSecondsSinceLastEventType`, the standard macOS idle-time
+  API — no custom keylogger/event tap) is **≥ 300s** (`afk_guard.IDLE_THRESHOLD_S`,
+  the single config constant — don't hardcode 300 anywhere else), via
+  `afk_guard.request_team_control(reason)`. Or explicitly via the overlay
+  badge's "Give team control" button (`force_team_control`, bypasses the idle
+  gate — that's fine, it's Mike consciously choosing it).
+- `team_active → user_active`: (a) **safety backstop** — the `afk-guard` daemon
+  polls idle time every 1s and the instant fresh input is detected while
+  `team_active`, it flips back immediately, no explicit action required; or
+  (b) the overlay's "Let me in" button; or (c) `afk_guard.release_to_user()`.
+
+### For automation authors
+```python
+import afk_guard
+afk_guard.require_team_control()                     # hard refuse if not already team_active
+afk_guard.ensure_team_control(reason="...", timeout=310)  # request + bounded wait
+```
+Or from the shell: `cc afk-status` / `cc afk-wait --reason "..."` /
+`cc afk-set-team --reason "..."` / `cc afk-release`. `afk-set-team` and
+`ensure_team_control`/`request_team_control` only ever succeed once Mike has
+actually been idle ≥ threshold (or hands off via the badge) — there is no
+programmatic bypass from an automation script's side.
+
+### Visible signal
+When `team_active`, a floating non-activating `NSPanel` (`overlay_panel.py`,
+all-Spaces, `NSApplicationActivationPolicyAccessory` so it never steals focus
+or Cmd-Tab) shows "Team at work — `<reason>`" + a "Let me in" button.
+Clicking it releases control and shrinks to a small draggable badge ("●
+team ready") rather than fully closing; clicking the badge re-arms a "Give
+team control" confirm. When `user_active`, nothing shows unless Mike created
+a badge himself — no unsolicited pop-ups.
+
+### Daemon
+`afk_guard.py`'s `run_daemon()` is installed as `launchd` agent
+`com.mikewolf.afk-guard` (`~/Library/LaunchAgents/com.mikewolf.afk-guard.plist`,
+`KeepAlive`, mirrors `cdc-review-bridge`'s plist shape). It owns the idle-time
+backstop and (belt-and-suspenders) launches `overlay_panel.py` whenever it
+sees `team_active`, even if the lock file was set some other way. The overlay
+process itself is otherwise launched on-demand by
+`request_team_control`/`force_team_control` (checked via `pgrep` for an
+existing instance first — don't double-launch).
+
+### Known consumer
+`second-brain/cdc-review/local-bridge/server.py`'s `/resume` endpoint (which
+shells out to `cc.py recent --pick`, a live AX click) calls
+`afk_guard.require_team_control()` / `request_team_control()` before invoking
+`cc.py` — refuses fast with HTTP 423 rather than blocking, since it's serving
+a web click. Model any new interactive-automation entrypoint on this.
+
 ## Code mode sidebar (discovered April 2026)
 
 ### Structure

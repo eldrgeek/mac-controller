@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 
-PORT         = int(os.environ.get("PULSE_DISPATCHER_PORT", "3340"))
+PORT         = 3335
 _CC_PY_DEFAULT = ["/opt/homebrew/bin/python3",
                    os.path.expanduser("~/Projects/mac-controller/cc.py")]
 CC_DISPATCH  = os.path.expanduser("~/.local/bin/cc-dispatch")

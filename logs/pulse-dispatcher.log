@@ -1,0 +1,69 @@
+[pulse-dispatcher] listening on :3335  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "POST /dispatch HTTP/1.1" 202 -
+[pulse-dispatcher] 2fc8db67-2074-4d7d-baa4-001fac7e9ee3 → verified (code: Dispatched in background: PID 89342
+Log: /Users/mikewolf/Projects/cc-dispatch/logs/20260610T164321Z-pulse-2fc8db67.log
+Report will be at: /Users/mikewolf/Projects/SOMA/audits/20260610T164321Z-pulse-2fc8db67.md)
+[pulse-dispatcher] 127.0.0.1 "POST /dispatch HTTP/1.1" 202 -
+[pulse-dispatcher] inject attempt 1 failed (ERROR: no Claude Desktop windows found), retrying
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+could not create image from display
+[pulse-dispatcher] HUD notified of failure 338597b3-3a48-4d16-ae2b-308b2d8eb105
+[pulse-dispatcher] 338597b3-3a48-4d16-ae2b-308b2d8eb105 → FAILED (chat): ERROR: no Claude Desktop windows found
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "GET /dispatches?state=failed HTTP/1.1" 200 -
+[pulse-dispatcher] 127.0.0.1 "POST /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105/replay HTTP/1.1" 202 -
+[pulse-dispatcher] inject attempt 1 failed (ERROR: no Claude Desktop windows found), retrying
+[pulse-dispatcher] 127.0.0.1 "GET /dispatch/338597b3-3a48-4d16-ae2b-308b2d8eb105 HTTP/1.1" 200 -
+could not create image from display
+[pulse-dispatcher] HUD notified of failure 338597b3-3a48-4d16-ae2b-308b2d8eb105
+[pulse-dispatcher] 338597b3-3a48-4d16-ae2b-308b2d8eb105 → FAILED (chat): ERROR: no Claude Desktop windows found
+[pulse-dispatcher] 127.0.0.1 "POST /dispatch HTTP/1.1" 202 -
+[pulse-dispatcher] 127.0.0.1 "POST /dispatch HTTP/1.1" 202 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3335  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3335  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3335  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
