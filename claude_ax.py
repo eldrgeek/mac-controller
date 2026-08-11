@@ -664,15 +664,54 @@ def list_tasks(win, status_filter: 'str | None' = None) -> list:
     return results
 
 
-def new_task(win) -> bool:
+def _task_snapshot(win) -> tuple:
+    """(count, selected_title) — the cheapest signal that a new task actually opened.
+
+    Deliberately tolerant: any AX hiccup yields (-1, None), which compares unequal
+    to everything and therefore can never be mistaken for evidence of success.
+    """
+    try:
+        tasks = list_tasks(win)
+    except Exception:
+        return (-1, None)
+    selected = next((t['title'] for t in tasks if t.get('selected')), None)
+    return (len(tasks), selected)
+
+
+def new_task(win, verify: bool = True) -> bool:
     """Open a new session/task appropriate for the current mode.
-    - Cowork: clicks 'New task ⌘N'
-    - Code:   clicks 'New session ⌘N'
+
+    - Cowork: clicks 'New task \u2318N'
+    - Code:   clicks 'New session \u2318N'
     - Chat:   clicks button containing 'New chat'
-    Falls back to ⌘N via osascript in all cases.
-    Sleeps 0.8s for UI settle.
+    Falls back to \u2318N via osascript, then VERIFIES.
+
+    Returns True only when the sidebar actually changed.
+
+    ------------------------------------------------------------------------
+    2026-08-11 - this function used to `return True` unconditionally.
+
+    It ran the click, discarded `ok`, ran an osascript fallback whose result it
+    also discarded (capture_output=True, return value dropped), slept 0.8s, and
+    reported success. cc.py's cmd_new_task then printed
+    {"status": "new_task_opened"} and exited 0 - whether or not a task opened,
+    and even with Claude Desktop in a state where nothing could open.
+
+    That is the WQ-243 fabricated-completion shape, and _estate/bin/turn-gate's
+    own module docstring cites THIS FUNCTION by name as its live example. It is
+    also why the tower-watchdog card ("the likely cause is cc.py new-task
+    failing its AX click") could be pushed and retired on eight consecutive
+    nights without anyone learning anything: the respawn path could not tell a
+    failed click from a successful one, so every night produced the same
+    non-diagnosis.
+
+    Verification is a before/after sidebar snapshot. Success = the task count
+    went up, or the selected task changed. Both are things a real \u2318N does and
+    a swallowed click does not.
+    ------------------------------------------------------------------------
     """
     import subprocess as _sp
+    before = _task_snapshot(win) if verify else None
     mode = infer_current_mode(win)
     if mode == 'cowork':
         ok = click_control(win, title='New task \u2318N', role='AXButton')
@@ -680,7 +719,9 @@ def new_task(win) -> bool:
         ok = click_control(win, title='New session \u2318N', role='AXButton')
     else:
         ok = click_control(win, contains='New chat', role='AXButton')
+    used_fallback = False
     if not ok:
+        used_fallback = True
         _sp.run([
             'osascript',
             '-e', 'tell application "Claude" to activate',
@@ -688,7 +729,12 @@ def new_task(win) -> bool:
             '-e', 'tell application "System Events" to keystroke "n" using command down',
         ], capture_output=True, timeout=5)
     time.sleep(0.8)
-    return True
+    if not verify:
+        return bool(ok or used_fallback)
+    after = _task_snapshot(win)
+    if before == (-1, None) or after == (-1, None):
+        return False              # couldn't observe => can't claim
+    return bool(after[0] > before[0] or after[1] != before[1])
 
 
 # ── Notifications ─────────────────────────────────────────────────────────────

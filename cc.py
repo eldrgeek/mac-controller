@@ -75,8 +75,24 @@ def _print(obj):
 
 
 def _require_window():
+    """Get the Claude Desktop window, or exit 1 SAYING WHY.
+
+    2026-08-11: this used to `sys.exit(1)` with no output at all. Every caller
+    that ran with Claude Desktop closed got a bare non-zero exit and no reason,
+    which is how the tower respawn path spent nine days unable to distinguish
+    "the AX click failed" from "the app isn't running." It is the second half of
+    the same bug as new_task()'s unconditional `return True`.
+    """
     win = find_claude_window()
     if not win:
+        running = bool(find_claude_app())
+        if running:
+            reason = ('Claude Desktop is running but exposes no window to the '
+                      'Accessibility API (minimised, or the AX tree is not built yet).')
+        else:
+            reason = 'Claude Desktop is not running.'
+        print('ERROR: no Claude Desktop window - %s' % reason, file=sys.stderr)
+        _print({'status': 'no_window', 'claude_running': running, 'reason': reason})
         sys.exit(1)
     return win
 
@@ -105,10 +121,20 @@ def cmd_mode(args):
 
 
 def cmd_new_task(args):
+    """Open a new task and REPORT WHETHER IT OPENED.
+
+    2026-08-11: this used to call new_task(), ignore its return value, and print
+    {"status": "new_task_opened"} with exit 0 unconditionally. turn-gate's module
+    docstring cites this exact line as its live fabricated-completion example
+    (WQ-243). Now the status reflects a verified before/after sidebar change and
+    the exit code follows it, so a caller - the tower watchdog above all - can
+    finally tell a real respawn from a swallowed click.
+    """
     win = _require_window()
-    new_task(win)
-    _print({'status': 'new_task_opened'})
-    return 0
+    opened = new_task(win)
+    _print({'status': 'new_task_opened' if opened else 'new_task_unverified',
+            'verified': bool(opened)})
+    return 0 if opened else 1
 
 
 def cmd_inject(args):
