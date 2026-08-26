@@ -66,7 +66,11 @@ def test_status_returns_valid_json():
     data = json.loads(out)
     assert 'claude_desktop' in data
     assert 'relay' in data
+    assert 'pulse' in data
     assert 'hud' in data
+    # hud.up is ask-surface health (relay /hud/asks), not the retired :3334 overlay
+    assert 'up' in data['hud']
+    assert data['hud'].get('surface') == 'pulse'
 
 
 @skip_unless_live
@@ -149,21 +153,25 @@ def test_inspect_composer():
 
 @skip_unless_live
 def test_inspect_sessions():
-    """cc inspect sessions should return a non-empty list."""
+    """cc inspect sessions should return a dict with a sessions list."""
     rc, out, err = run_cc('inspect', 'sessions')
     assert rc == 0, f'inspect sessions failed: {err}'
     data = json.loads(out)
-    assert isinstance(data, list)
-    assert len(data) > 0, 'Session list was empty'
+    assert isinstance(data, dict)
+    assert 'sessions' in data
+    assert isinstance(data['sessions'], list)
+    assert len(data['sessions']) > 0, 'Session list was empty'
 
 
 @skip_unless_live
 def test_inspect_tasks():
-    """cc inspect tasks should return a list."""
+    """cc inspect tasks should return a dict with a tasks list."""
     rc, out, err = run_cc('inspect', 'tasks')
     assert rc == 0, f'inspect tasks failed: {err}'
     data = json.loads(out)
-    assert isinstance(data, list)
+    assert isinstance(data, dict)
+    assert 'tasks' in data
+    assert isinstance(data['tasks'], list)
 
 
 @skip_unless_live
@@ -198,7 +206,7 @@ def test_new_task_increases_count():
     assert after > before, f'task_count did not increase: {before} -> {after}'
 
 
-# ─── hud-ask (relay must be running; HUD must be open) ───────────────────────
+# ─── hud-ask (relay must be running; Pulse renders via GET /hud/asks) ────────
 
 @pytest.mark.skipif(not LIVE, reason='Set CLAUDE_LIVE_TESTS=1 to run live tests')
 def test_hud_ask_timeout():

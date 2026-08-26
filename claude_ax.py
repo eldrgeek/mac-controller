@@ -72,6 +72,7 @@ _NON_SESSION_LABELS = {
     'Get apps and extensions', 'Share chat', 'Retry', 'Edit', 'Copy',
     'Give positive feedback', 'Give negative feedback',
     'Scroll to bottom', 'Press and hold to record',
+    'New', 'New task \u2318N', 'New session \u2318N',
 }
 
 
@@ -301,16 +302,23 @@ def click_control(win, title=None, contains=None, description=None, role=None):
 
 
 def click_first_match(win, matchers):
-    """Try multiple control matchers in order until one succeeds."""
+    """Try multiple control matchers in order until one succeeds.
+
+    Uses find_control directly so intermediate misses stay silent —
+    only a total miss prints ERROR (same as click_control).
+    """
     for matcher in matchers:
-        if click_control(
+        control = find_control(
             win,
             title=matcher.get('title'),
             contains=matcher.get('contains'),
             description=matcher.get('description'),
             role=matcher.get('role'),
-        ):
+        )
+        if control:
+            AS.AXUIElementPerformAction(control['elem'], 'AXPress')
             return True
+    print('ERROR: control not found', file=sys.stderr)
     return False
 
 
@@ -328,9 +336,21 @@ def set_prompt_text(win, text):
 
 # Empty-composer placeholders echoed as AXValue by the web view. An empty
 # composer must NOT be mistaken for a user draft, or focus-gated automation
-# would defer forever whenever the composer is idle.
+# would defer forever whenever the composer is idle. Cowork used to say
+# 'Reply...'; Chat/current builds echo 'Write a message…'. Compare case-folded.
 _COMPOSER_PLACEHOLDERS = {'reply...', 'reply\u2026', 'write a message\u2026',
                           'write a message...'}
+
+
+def is_empty_composer_text(raw, placeholder=''):
+    """True when AXValue is blank or a known placeholder, not a user draft."""
+    stripped = (raw or '').strip()
+    if not stripped:
+        return True
+    ph = (placeholder or '').strip()
+    if ph and stripped == ph:
+        return True
+    return stripped.lower() in _COMPOSER_PLACEHOLDERS
 
 
 def get_composer_state(win):
@@ -338,10 +358,7 @@ def get_composer_state(win):
     send_btn = find_send_button(win)
     raw = (get_attr(text_area, 'AXValue') or '') if text_area else ''
     placeholder = (get_attr(text_area, 'AXPlaceholderValue') or '') if text_area else ''
-    stripped = raw.strip()
-    is_empty = (not stripped
-                or stripped == placeholder.strip()
-                or stripped.lower() in _COMPOSER_PLACEHOLDERS)
+    is_empty = is_empty_composer_text(raw, placeholder)
     return {
         'has_text_area': bool(text_area),
         'draft_text': '' if is_empty else raw,
@@ -488,100 +505,19 @@ def find_claude_window():
 
 
 def run(argv=None):
-    args = build_parser().parse_args(argv)
-    msg = ' '.join(args.message)
+    """Direct invocation is a silent bypass of cc.py AFK + cowork-safe gates.
 
-    win = find_claude_window()
-    if not win:
-        return 1
-
-    # Claude Desktop 1.3561+ hides WKWebView content from the native window tree.
-    # Use AXFocusedUIElement (returns AXWebArea) for text-area / button lookups.
-    _app = find_claude_app()
-    _app_elem = AS.AXUIElementCreateApplication(_app.processIdentifier()) if _app else None
-    content_root = (get_content_root(_app_elem) if _app_elem else None) or win
-
-    if args.session:
-        target = find_session_button(win, args.session)
-        if not target:
-            print(f'ERROR: session "{args.session}" not found in sidebar', file=sys.stderr)
-            return 1
-
-        saved_text = ''
-        saved_session = None
-
-        if args.save_restore:
-            current_ta = find_text_area(content_root)
-            if current_ta:
-                saved_text = get_attr(current_ta, 'AXValue') or ''
-            saved_session = get_selected_session(win)
-            if saved_session:
-                print(f'saved: session={saved_session["title"]!r}  text={saved_text[:40]!r}')
-
-        print(f'switching to: {target["title"]!r}')
-        AS.AXUIElementPerformAction(target['elem'], 'AXPress')
-        time.sleep(1.2)
-
-        ok = inject_message(content_root, msg)
-
-        if args.save_restore and saved_session:
-            time.sleep(0.5)
-            print(f'restoring: {saved_session["title"]!r}')
-            AS.AXUIElementPerformAction(saved_session['elem'], 'AXPress')
-            time.sleep(0.8)
-            if saved_text:
-                restored_ta = wait_for_text_area(win, timeout=3.0)
-                if restored_ta:
-                    AS.AXUIElementSetAttributeValue(restored_ta, 'AXValue', saved_text)
-                    print(f'restored text: {saved_text[:40]!r}')
-
-        return 0 if ok else 1
-
-    # ── Save current draft before injecting ──────────────────────────────────
-    current_ta = find_text_area(content_root)
-    saved_draft = (get_attr(current_ta, 'AXValue') or '') if current_ta else ''
-
-    # ── HUD / system notification ─────────────────────────────────────────────
-    import subprocess as _sp2
-    import urllib.request as _ur
-    import json as _js
-    short_msg = msg[:72] + ('…' if len(msg) > 72 else '')
-    notif_title = 'SOMA'
-    notif_body  = f'Injecting: {short_msg}' + (' (draft preserved)' if saved_draft else '')
-
-    # Try relay HUD first (silent fail if relay isn't running)
-    try:
-        _ur.urlopen(
-            _ur.Request(
-                'http://localhost:3333/notify',
-                data=_js.dumps({'message': notif_body, 'title': notif_title}).encode(),
-                headers={'Content-Type': 'application/json'},
-                method='POST',
-            ),
-            timeout=1,
-        )
-    except Exception:
-        pass  # relay not running — fall through to osascript
-
-    # osascript notification (always-available fallback)
-    _sp2.run(
-        ['osascript', '-e',
-         f'display notification {_js.dumps(notif_body)} with title {_js.dumps(notif_title)}'],
-        capture_output=True, timeout=3,
+    claude_ax.py is the AX library; `cc.py` is the canonical inject CLI.
+    Refusing here is deliberate — do not restore a second inject entry point.
+    """
+    print(
+        'ERROR: claude_ax.py is a library, not an inject CLI.\n'
+        'Use: python3 ~/Projects/mac-controller/cc.py inject "MSG"\n'
+        'Direct invocation is disabled so AFK and cowork-safe gates cannot '
+        'be bypassed.',
+        file=sys.stderr,
     )
-
-    # ── Inject ────────────────────────────────────────────────────────────────
-    ok = inject_message(content_root, msg)
-
-    # ── Restore draft ─────────────────────────────────────────────────────────
-    if saved_draft and ok:
-        time.sleep(0.8)   # let Claude register the submitted message
-        restore_ta = find_text_area(content_root)
-        if restore_ta:
-            AS.AXUIElementSetAttributeValue(restore_ta, 'AXValue', saved_draft)
-            print(f'restored draft ({len(saved_draft)} chars): {saved_draft[:60]!r}')
-
-    return 0 if ok else 1
+    return 2
 
 
 def main():
@@ -664,31 +600,52 @@ def list_tasks(win, status_filter: 'str | None' = None) -> list:
     return results
 
 
+def new_task_matchers(mode: 'str | None') -> list:
+    """AX matchers for the New control, ordered most-specific first.
+
+    As of 2026-08-11 the app labels the control plain 'New' in every mode;
+    keep the historical ⌘N titles first so older builds still match.
+    No System Events keystroke fallback — ⌘N was measured to misdeliver.
+    """
+    if mode == 'cowork':
+        return [
+            {'title': 'New task \u2318N', 'role': 'AXButton'},
+            {'title': 'New', 'role': 'AXButton'},
+        ]
+    if mode == 'code':
+        return [
+            {'title': 'New session \u2318N', 'role': 'AXButton'},
+            {'title': 'New', 'role': 'AXButton'},
+        ]
+    return [
+        {'contains': 'New chat', 'role': 'AXButton'},
+        {'title': 'New', 'role': 'AXButton'},
+    ]
+
+
+def _sidebar_fingerprint(win):
+    """Comparable snapshot of sidebar session/task titles + selection."""
+    return tuple(
+        (b.get('title'), bool(b.get('selected')))
+        for b in find_nav_buttons(win)
+    )
+
+
 def new_task(win) -> bool:
     """Open a new session/task appropriate for the current mode.
-    - Cowork: clicks 'New task ⌘N'
-    - Code:   clicks 'New session ⌘N'
-    - Chat:   clicks button containing 'New chat'
-    Falls back to ⌘N via osascript in all cases.
-    Sleeps 0.8s for UI settle.
+
+    Returns True only when an AX click succeeded AND the sidebar fingerprint
+    changed. Never falls back to System Events keystroke "n" (forbidden
+    estate-wide; also measured to misdeliver).
     """
-    import subprocess as _sp
+    before = _sidebar_fingerprint(win)
     mode = infer_current_mode(win)
-    if mode == 'cowork':
-        ok = click_control(win, title='New task \u2318N', role='AXButton')
-    elif mode == 'code':
-        ok = click_control(win, title='New session \u2318N', role='AXButton')
-    else:
-        ok = click_control(win, contains='New chat', role='AXButton')
+    ok = click_first_match(win, new_task_matchers(mode))
     if not ok:
-        _sp.run([
-            'osascript',
-            '-e', 'tell application "Claude" to activate',
-            '-e', 'delay 0.2',
-            '-e', 'tell application "System Events" to keystroke "n" using command down',
-        ], capture_output=True, timeout=5)
+        return False
     time.sleep(0.8)
-    return True
+    after = _sidebar_fingerprint(win)
+    return after != before
 
 
 # ── Notifications ─────────────────────────────────────────────────────────────
@@ -720,16 +677,18 @@ def _notify(title: str, body: str) -> None:
 # ── CoWork-safe injection ─────────────────────────────────────────────────────
 
 def cowork_safe_inject(win, msg: str, dispatch: bool = True) -> bool:
-    """CoWork-aware injection:
-    1. If composer has a real draft, notify via HUD and copy draft to clipboard.
+    """Draft-preserving injection (default inject path):
+    1. If composer has a real draft (not a placeholder), notify via relay
+       and copy the draft to clipboard.
     2. Inject msg into the composer.
     3. If dispatch=True, submit (Queue or Send).
+    Empty-draft detection shares is_empty_composer_text / _COMPOSER_PLACEHOLDERS
+    with get_composer_state — do not special-case 'Reply...' here.
     """
     import subprocess as _sp
-    ta = find_text_area(win)
-    draft = (get_attr(ta, 'AXValue') or '') if ta else ''
-    real_draft = draft.strip() not in ('', 'Reply...')
-    if real_draft:
+    state = get_composer_state(win)
+    draft = state.get('draft_text') or ''
+    if draft:
         _notify('CoWork', f'Draft preserved ({len(draft)} chars). Injecting new message.')
         _sp.run(['pbcopy'], input=draft.encode(), check=True)
         print(f'Draft copied to clipboard: {draft[:80]!r}', file=sys.stderr)
@@ -748,6 +707,7 @@ def cowork_safe_inject(win, msg: str, dispatch: bool = True) -> bool:
 _SECTION_FILTER_LABELS = {
     'Scheduled', 'Live artifacts', 'Dispatch', 'Customize',
     'Projects', 'Pinned', 'Recents', 'View all', 'New task \u2318N',
+    'New session \u2318N', 'New',
 }
 
 
