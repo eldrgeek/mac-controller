@@ -23,6 +23,11 @@ LEDGER       = os.path.expanduser("~/Projects/SOMA/dispatch-ledger.jsonl")
 FAILURES_DIR = os.path.expanduser("~/Projects/SOMA/audits/dispatch-failures")
 RELAY        = "http://localhost:3333"
 
+# Same directory as afk_guard.py / cc.py
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
 # Allow test harness to swap in a bogus cc binary via env var
 _CC_PY_OVERRIDE = os.environ.get("PULSE_DISPATCHER_CC_PY_OVERRIDE")
 
@@ -179,10 +184,22 @@ def _dispatch_code(did: str, text: str) -> tuple:
         return False, str(ex)
 
 def _dispatch_chat_cowork(did: str, text: str, target: str) -> tuple:
-    """Inject into Chat or Cowork with one retry and post-inject verification."""
-    inject_args = ["inject", text]
-    if target == "cowork":
-        inject_args.append("--cowork-safe")
+    """Inject into Chat or Cowork with one retry and post-inject verification.
+
+    Always passes --cowork-safe (cc.py now defaults to draft preservation;
+    the flag is explicit so a revert of that default cannot re-clobber Chat).
+    Requires team_active unless CC_SKIP_AFK_GUARD is set — cc.py also gates
+    inject, but failing here keeps the ledger error readable.
+    """
+    import afk_guard
+    skip = os.environ.get("CC_SKIP_AFK_GUARD", "").strip().lower() in ("1", "true", "yes")
+    if not skip:
+        try:
+            afk_guard.require_team_control()
+        except afk_guard.AfkGuardError as e:
+            return False, f"afk-guard: {e}"
+
+    inject_args = ["inject", text, "--cowork-safe"]
 
     last_err = "no attempt made"
     for attempt in range(2):
