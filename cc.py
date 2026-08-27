@@ -21,6 +21,9 @@ Commands:
     --cowork-safe                 No-op (draft preservation is the default)
     --clobber                     Overwrite composer without preserving draft
   inspect <overview|sessions|tasks|composer|mode|buttons>
+  status [--ax]                   Ask-surface (relay+Pulse+hud) without stealing
+                                  focus. AX snapshot only if Claude is already
+                                  frontmost, or with --ax (activates if needed).
   afk-status                      Show automation-lock state + live idle seconds
   afk-wait --reason "..."         Block (bounded) until team_active is granted
   afk-set-team --reason "..."     Request team_active now (fails unless idle >= threshold)
@@ -62,6 +65,7 @@ from claude_ax import (
     get_content_root,
     get_selected_session,
     inject_message,
+    is_claude_frontmost,
     list_sessions,
     list_tasks,
     new_task,
@@ -72,6 +76,7 @@ from claude_ax import (
     submit_prompt,
     wait_for_text_area,
     find_roles,
+    _notify,
 )
 
 # Ask surface: yeshie relay brokers, Pulse (web :8088 / Pixel) renders.
@@ -126,16 +131,39 @@ def _http_reachable(url, timeout=1.5):
         return False, str(e)
 
 
-def _afk_guard_disabled(args) -> bool:
+def _log_loud_bypass(kind: str, detail: str) -> None:
+    """Unsigned session-clobber / AFK-skip must be loud: stderr + estate notify.
+
+    Estate notify is claude_ax._notify (POST :3333/notify + osascript banner).
+    Do not invent a HUD; do not use System Events keystrokes.
+    """
+    msg = f'{kind}: {detail}'
+    print(f'WARNING: {msg}', file=sys.stderr)
+    try:
+        _notify('cc.py', msg)
+    except Exception:
+        pass
+
+
+def _afk_skip_reason(args) -> str | None:
+    """Why the AFK/team-control lock is being skipped, or None if it is not."""
     if getattr(args, 'no_afk_guard', False):
-        return True
+        return '--no-afk-guard'
     v = os.environ.get('CC_SKIP_AFK_GUARD', '')
-    return v.strip().lower() in ('1', 'true', 'yes')
+    if v.strip().lower() in ('1', 'true', 'yes'):
+        return 'CC_SKIP_AFK_GUARD'
+    return None
+
+
+def _afk_guard_disabled(args) -> bool:
+    return _afk_skip_reason(args) is not None
 
 
 def _require_interactive(args, reason: str):
     """Refuse mutating AX work unless team_active. Returns exit code or None."""
-    if _afk_guard_disabled(args):
+    skip = _afk_skip_reason(args)
+    if skip:
+        _log_loud_bypass('afk-skip', f'{skip} during {reason}')
         return None
     try:
         afk_guard.require_team_control()
@@ -143,6 +171,14 @@ def _require_interactive(args, reason: str):
         _print({'error': str(e), 'reason': reason})
         return 1
     return None
+
+
+def _clobber_requested(args, where: str) -> bool:
+    """True if --clobber; logs every use (stderr + relay)."""
+    if getattr(args, 'clobber', False):
+        _log_loud_bypass('clobber', f'--clobber during {where}')
+        return True
+    return False
 
 
 def _ask_surface(relay: dict, pulse: dict = None, pending_asks=None, asks_err=None):
@@ -232,7 +268,7 @@ def cmd_inject(args):
 
     # Draft preservation is the default. --clobber restores the old overwrite
     # path. --cowork-safe is kept as a no-op so documented callers still parse.
-    if args.clobber:
+    if _clobber_requested(args, 'inject'):
         if not set_prompt_text(root, msg):
             return 1
         if args.no_dispatch:
@@ -289,7 +325,7 @@ def cmd_recent(args):
     time.sleep(1.2)
 
     if args.inject:
-        if args.clobber:
+        if _clobber_requested(args, 'recent --inject'):
             if not set_prompt_text(root, args.inject):
                 return 1
             if args.no_dispatch:
@@ -309,6 +345,11 @@ def cmd_recent(args):
 
 
 def cmd_inspect(args):
+    """AX snapshot. May front Claude via get_content_root() (WKWebView 1.3561+).
+
+    Not the cheap poll — cc-dispatch handoff.py should use `cc status` (ask
+    surface) instead. Do not gate this; it is the dedicated AX path.
+    """
     win = _require_window()
     root = _content_root(win)
     what = args.what
@@ -355,51 +396,12 @@ def cmd_inspect(args):
     return 0
 
 
-def cmd_status(args):
-    """Full machine-readable status: Claude Desktop AX + relay + Pulse + jobs.
+def _collect_ask_surface():
+    """Relay + Pulse + hud.up. No AX, no activate, no Claude required.
 
-    `hud.up` is ask-surface health (relay `/hud/asks`), not the retired :3334
-    overlay. Pulse (:8088) is a sibling field. Relay ask JSON keys are a Pulse
-    contract and are not renamed here.
+    This is the cheap poll cc-dispatch handoff.py should use. Do not fold
+    get_content_root() into this path.
     """
-    # ── Claude Desktop ────────────────────────────────────────────
-    win = find_claude_window()
-    desktop = {'available': False}
-    if win:
-        root = _content_root(win)
-        mode = infer_current_mode(win)
-        selected = get_selected_session(win)
-        composer = get_composer_state(root)
-        tasks = list_tasks(win)
-
-        # Group tasks by status — only include status-prefixed items
-        # Unprefixed items include UI buttons (tool-use, sidebar chrome) — skip them
-        by_status = {}
-        for t in tasks:
-            s = t['status']
-            if s is None:
-                continue   # skip unprefixed — includes tool-use buttons
-            by_status.setdefault(s, []).append(t['clean_title'])
-        # Trim done list — usually long
-        if 'done' in by_status:
-            by_status['done_recent'] = by_status.pop('done')[:5]
-
-        desktop = {
-            'available': True,
-            'mode': mode,
-            'selected_session': selected['title'] if selected else None,
-            'active_web_title': composer.get('active_web_title'),
-            'composer': {
-                'has_text_area': composer.get('has_text_area'),
-                'send_action': composer.get('send_action'),
-                # get_composer_state already blanks placeholder AXValues
-                'has_draft': bool((composer.get('draft_text') or '').strip()),
-            },
-            'tasks': by_status,
-            'task_count': len(tasks),
-        }
-
-    # ── Relay (localhost:3333) ────────────────────────────────────
     relay_status, relay_err = _http_json(f'{RELAY_URL}/status')
     relay = {'up': relay_status is not None}
     if relay_status:
@@ -407,10 +409,8 @@ def cmd_status(args):
     else:
         relay['error'] = relay_err
 
-    # ── Jobs ─────────────────────────────────────────────────────
     jobs_data, _ = _http_json(f'{RELAY_URL}/jobs/status?filter=all')
     raw_jobs = (jobs_data or {}).get('jobs', [])
-    # Summarise: active (non-done) first, cap at 10
     active_jobs = [j for j in raw_jobs if j.get('status') not in ('done', 'error')]
     recent_done = [j for j in raw_jobs if j.get('status') in ('done', 'error')][:3]
     jobs = {
@@ -421,31 +421,108 @@ def cmd_status(args):
         'total': len(raw_jobs),
     }
 
-    # ── Chat channel ─────────────────────────────────────────────
     chat_status, _ = _http_json(f'{RELAY_URL}/chat/status')
     chat = chat_status or {'available': False}
 
-    # ── Pulse renderer (:8088) — HTML is fine; any HTTP response = up ─
     pulse_up, pulse_err = _http_reachable(PULSE_URL)
     pulse = {'up': pulse_up, 'url': PULSE_URL}
     if not pulse_up:
         pulse['error'] = pulse_err
 
-    # ── Ask surface (Pulse polls GET /hud/asks; overlay :3334 is dead) ─
     asks_data, asks_err = _http_json(f'{RELAY_URL}/hud/asks')
     pending = None
     if asks_data is not None:
         pending = len(asks_data.get('asks') or [])
         asks_err = None
     hud = _ask_surface(relay, pulse, pending_asks=pending, asks_err=asks_err)
-
-    _print({
-        'claude_desktop': desktop,
+    return {
         'relay': relay,
         'pulse': pulse,
         'jobs': jobs,
         'chat_channel': chat,
         'hud': hud,
+    }
+
+
+def _desktop_ax_snapshot(win):
+    """AX walk via get_content_root(). Callers must have already decided it
+    is safe to front Claude (already frontmost, or explicit --ax)."""
+    root = _content_root(win)
+    mode = infer_current_mode(win)
+    selected = get_selected_session(win)
+    composer = get_composer_state(root)
+    tasks = list_tasks(win)
+
+    by_status = {}
+    for t in tasks:
+        s = t['status']
+        if s is None:
+            continue
+        by_status.setdefault(s, []).append(t['clean_title'])
+    if 'done' in by_status:
+        by_status['done_recent'] = by_status.pop('done')[:5]
+
+    return {
+        'available': True,
+        'ax': 'ok',
+        'mode': mode,
+        'selected_session': selected['title'] if selected else None,
+        'active_web_title': composer.get('active_web_title'),
+        'composer': {
+            'has_text_area': composer.get('has_text_area'),
+            'send_action': composer.get('send_action'),
+            'has_draft': bool((composer.get('draft_text') or '').strip()),
+        },
+        'tasks': by_status,
+        'task_count': len(tasks),
+    }
+
+
+def _desktop_status(args):
+    """Claude Desktop block for `cc status`.
+
+    Default: do not call get_content_root() / activate Claude. AX snapshot
+    only if Claude is already frontmost, or `--ax` was passed (that flag
+    will activate if needed — WKWebView 1.3561+, see KNOWLEDGE.md).
+    `inspect` remains the dedicated AX path.
+    """
+    frontmost = is_claude_frontmost()
+    want_ax = bool(getattr(args, 'ax', False) or frontmost)
+    win = find_claude_window()
+    if not win:
+        return {
+            'available': False,
+            'frontmost': False,
+            'ax': 'none',
+        }
+    if not want_ax:
+        return {
+            'available': True,
+            'frontmost': False,
+            'ax': 'skipped',
+        }
+    desktop = _desktop_ax_snapshot(win)
+    desktop['frontmost'] = frontmost
+    return desktop
+
+
+def cmd_status(args):
+    """Machine-readable status: ask-surface (relay + Pulse + hud.up) always;
+    Claude Desktop AX only when already frontmost or `--ax`.
+
+    `hud.up` is ask-surface health (relay `/hud/asks`), not the retired :3334
+    overlay. Pulse (:8088) is a sibling field. Relay ask JSON keys are a Pulse
+    contract and are not renamed here.
+    """
+    surface = _collect_ask_surface()
+    desktop = _desktop_status(args)
+    _print({
+        'claude_desktop': desktop,
+        'relay': surface['relay'],
+        'pulse': surface['pulse'],
+        'jobs': surface['jobs'],
+        'chat_channel': surface['chat_channel'],
+        'hud': surface['hud'],
     })
     return 0
 
@@ -498,7 +575,17 @@ def build_parser():
                      help='Overwrite composer without copying an existing draft to clipboard')
     rec.add_argument('--no-dispatch', action='store_true')
 
-    sub.add_parser('status', help='Full machine-readable status: Desktop + relay + Pulse + jobs')
+    st = sub.add_parser(
+        'status',
+        help='Ask-surface (relay+Pulse+hud) without stealing focus; AX only if Claude is frontmost or --ax',
+    )
+    st.add_argument(
+        '--ax', action='store_true',
+        help='Include Claude Desktop AX snapshot. Activates Claude if it is not '
+             'already frontmost (WKWebView 1.3561+). Default: report relay + Pulse '
+             '+ hud.up without get_content_root(); AX is included only when Claude '
+             'is already the frontmost app. inspect remains the dedicated AX path.',
+    )
 
     ins = sub.add_parser('inspect', help='Inspect Claude Desktop AX state')
     ins.add_argument('what',

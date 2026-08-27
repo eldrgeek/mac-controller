@@ -20,13 +20,13 @@ relay on `:3333`; the old `:3334` HUD overlay is retired but the CLI contract is
 - `cc.py new-task` — open a new Cowork/Chat/Code pane (AX `New` control; no ⌘N keystroke). Fails if the sidebar does not change.
 - `cc.py inject "MSG"` — inject text into the current session. Draft preservation is the **default** (clipboard + relay notify if the composer has a real draft, not a placeholder). Flags:
   - `--session TITLE` switch to that session first · `--new` create a task first (fails if the pane does not open)
-  - `--clobber` overwrite without preserving a draft · `--cowork-safe` no-op, kept for documented callers
+  - `--clobber` overwrite without preserving a draft (logged to stderr + relay) · `--cowork-safe` no-op, kept for documented callers
   - `--no-dispatch` set the text but don't submit · `--save-restore` save/restore draft + session
-  - `--no-afk-guard` bypass `team_active` (tests / emergency only)
+  - `--no-afk-guard` bypass `team_active` (tests / emergency only; logged to stderr + relay)
 - `cc.py recent [--list|--status STATUS|--pick TITLE|--inject MSG]` — work with recent
   sessions/tasks; `--status` filters running/done/ready/scheduled/dispatch/"awaiting input". `--pick` is AFK-gated.
-- `cc.py inspect <overview|sessions|tasks|composer|mode|buttons>` — read AX state (ungated)
-- `cc.py status` — machine-readable: Desktop + `relay` + `pulse` + `hud` (ask-surface, not `:3334`) + jobs
+- `cc.py inspect <overview|sessions|tasks|composer|mode|buttons>` — read AX state (ungated; may front Claude)
+- `cc.py status [--ax]` — machine-readable: `relay` + `pulse` + `hud` (ask-surface, not `:3334`) + jobs. **Does not activate Claude** unless it is already frontmost or `--ax` is passed.
 - `cc.py hud-ask "MSG"` — ask Mike with Confirm/Failed/Partial buttons (relay `:3333`; Pulse renders)
 
 ## Gotcha — WKWebView regression (Claude Desktop 1.3561+)

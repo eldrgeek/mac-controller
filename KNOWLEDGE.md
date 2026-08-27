@@ -119,11 +119,16 @@ programmatic bypass from an automation script's side.
 
 **Enforced at the `cc.py` boundary (2026-08-26):** `mode`, `new-task`, `inject`,
 and `recent --pick` call `require_team_control()` before any AX click/type.
-`inspect`, `status`, `hud-ask`, and `afk-*` stay ungated (`inspect`/`status`
-still activate Claude via `get_content_root()` for the WKWebView walk — a
-known tradeoff). Documented opt-out: `cc inject --no-afk-guard …` or
-`CC_SKIP_AFK_GUARD=1` (tests / emergency only). `claude_ax.py:run()` refuses
-so it cannot bypass these gates; call `cc.py`.
+`inspect`, `status`, `hud-ask`, and `afk-*` stay ungated. **`cc status` does
+not call `get_content_root()` / activate Claude** unless Claude is already
+frontmost or `cc status --ax` is passed (`inspect` remains the AX path and
+still needs frontmost for WKWebView 1.3561+). Documented opt-out:
+`cc inject --no-afk-guard …` or `CC_SKIP_AFK_GUARD=1` (tests / emergency only).
+Every skip and every `--clobber` logs to stderr **and** the yeshie relay notify
+path (`POST :3333/notify`, same estate notify as other cc events). There is no
+programmatic silent bypass. `claude_ax.py:run()` refuses so it cannot bypass
+these gates; call `cc.py`. `~/.mac-controller/automation-lock.json` is written
+mode `0600`.
 
 Empty-composer detection is shared: `_COMPOSER_PLACEHOLDERS` /
 `is_empty_composer_text()` covers `Reply...` and `Write a message…`. Do not
