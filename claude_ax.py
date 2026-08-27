@@ -443,6 +443,15 @@ def activate_claude():
     return True
 
 
+def is_claude_frontmost() -> bool:
+    """True iff Claude Desktop is already the frontmost app. Does not activate."""
+    ws = AppKit.NSWorkspace.sharedWorkspace()
+    front = ws.frontmostApplication()
+    if not front:
+        return False
+    return front.bundleIdentifier() == CLAUDE_BUNDLE_ID
+
+
 
 def get_content_root(app_elem, timeout=5.0):
     """Return the AXWebArea root of Claude's UI (works with Claude Desktop 1.3561+).

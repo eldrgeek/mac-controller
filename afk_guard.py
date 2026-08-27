@@ -134,13 +134,35 @@ def read_state() -> dict:
         return _default_state()
 
 
+# Locke: lock file is team-control state — never world-readable.
+_LOCK_FILE_MODE = 0o600
+
+
 def _write_state(state: str, reason: str = '') -> dict:
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     data = {'state': state, 'since': _now_iso(), 'reason': reason}
+    payload = json.dumps(data, indent=2) + '\n'
     tmp = LOCK_PATH.with_suffix('.json.tmp')
-    with open(tmp, 'w') as f:
-        json.dump(data, f, indent=2)
-    tmp.replace(LOCK_PATH)  # atomic on same filesystem
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = -1
+    try:
+        fd = os.open(tmp, flags, _LOCK_FILE_MODE)
+        os.fchmod(fd, _LOCK_FILE_MODE)  # force 0600 even if umask is loose
+        with os.fdopen(fd, 'w') as f:
+            fd = -1  # fdopen owns the fd from here
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    os.replace(tmp, LOCK_PATH)
+    os.chmod(LOCK_PATH, _LOCK_FILE_MODE)
     return data
 
 

@@ -16,6 +16,12 @@ from urllib.parse import urlparse, parse_qs
 from pathlib import Path
 
 PORT         = int(os.environ.get("PULSE_DISPATCHER_PORT", "3340"))
+# Locke: LAN inject if 0.0.0.0 + unauthenticated POST /dispatch. Loopback only.
+BIND_HOST    = "127.0.0.1"
+# Optional shared secret. Unset = localhost bind is the gate (Pulse keeps working).
+# If set, mutating POSTs and data GETs require Authorization: Bearer <token>
+# or X-Pulse-Token: <token>. GET /health stays open.
+DISPATCH_TOKEN = os.environ.get("PULSE_DISPATCHER_TOKEN", "").strip()
 _CC_PY_DEFAULT = ["/opt/homebrew/bin/python3",
                    os.path.expanduser("~/Projects/mac-controller/cc.py")]
 CC_DISPATCH  = os.path.expanduser("~/.local/bin/cc-dispatch")
@@ -142,28 +148,23 @@ def _screenshot(did: str) -> str:
         print(f"[pulse-dispatcher] screencapture failed: {ex}", flush=True)
     return path
 
-def _verify_chat_cowork(target: str) -> tuple:
-    """Check that composer draft_text is empty → message was consumed."""
-    try:
-        rc, out, err = _run_cc("inspect", "composer", timeout=15)
-        if rc != 0:
-            return False, f"inspect exit {rc}: {err or out}"
+def _verify_chat_cowork(target: str, inject_rc: int, inject_out: str) -> tuple:
+    """Trust inject exit/JSON. Do not call `cc inspect composer`.
+
+    inspect composer fronts Claude (get_content_root / WKWebView 1.3561+) and
+    returns draft body. Verification must not steal focus or ship composer
+    contents. inject already did the AX work; rc=0 + status!=error is enough.
+    """
+    if inject_rc != 0:
+        return False, inject_out or f"inject exit {inject_rc}"
+    if inject_out:
         try:
-            data = json.loads(out)
-            draft = data.get("draft_text", None)
-            if draft is None:
-                # unexpected shape — trust inject exit code, warn
-                return True, f"composer shape unexpected; trusting inject rc=0"
-            if draft == "":
-                return True, "composer empty — message consumed"
-            return False, f"composer still has text ({len(draft)} chars)"
+            data = json.loads(inject_out)
+            if isinstance(data, dict) and data.get("status") == "error":
+                return False, data.get("error") or "inject status=error"
         except json.JSONDecodeError:
-            # If output is not JSON we can't verify; trust the inject exit code
-            return True, f"composer output unparseable; trusting inject rc=0"
-    except subprocess.TimeoutExpired:
-        return False, "inspect composer timed out"
-    except Exception as ex:
-        return False, str(ex)
+            pass
+    return True, "inject rc=0 (composer not inspected)"
 
 def _dispatch_code(did: str, text: str) -> tuple:
     """Run cc-dispatch for code target."""
@@ -193,6 +194,11 @@ def _dispatch_chat_cowork(did: str, text: str, target: str) -> tuple:
     """
     import afk_guard
     skip = os.environ.get("CC_SKIP_AFK_GUARD", "").strip().lower() in ("1", "true", "yes")
+    if skip:
+        # Not default-on. Honor the env if an operator set it, but be loud.
+        # Do not pass --no-afk-guard or --clobber to cc.py.
+        print("[pulse-dispatcher] WARNING: CC_SKIP_AFK_GUARD set — skipping "
+              "dispatcher AFK check (cc.py will also skip and log)", flush=True)
     if not skip:
         try:
             afk_guard.require_team_control()
@@ -214,9 +220,9 @@ def _dispatch_chat_cowork(did: str, text: str, target: str) -> tuple:
                     continue
                 return False, last_err
 
-            # Give Claude Desktop a moment to consume the text
-            time.sleep(1.5)
-            ok, msg = _verify_chat_cowork(target)
+            # Give Claude Desktop a moment; verify from inject result only
+            # (no second AX walk, no composer body).
+            ok, msg = _verify_chat_cowork(target, rc, out)
             if ok:
                 return True, msg
             last_err = f"verification failed: {msg}"
@@ -285,8 +291,27 @@ def _worker():
             print(f"[pulse-dispatcher] worker unhandled exception for {did}: {ex}",
                   flush=True)
 
-# ── HTTP handler ─────────────────────────────────────────────────────────────
+def _token_ok(headers) -> bool:
+    """True if DISPATCH_TOKEN is unset, or the request carries it."""
+    if not DISPATCH_TOKEN:
+        return True
+    auth = (headers.get("Authorization") or "").strip()
+    hdr = (headers.get("X-Pulse-Token") or "").strip()
+    if hdr and hdr == DISPATCH_TOKEN:
+        return True
+    if auth == DISPATCH_TOKEN or auth == f"Bearer {DISPATCH_TOKEN}":
+        return True
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
+    def _require_token(self) -> bool:
+        """False if the caller should already have received 401."""
+        if _token_ok(self.headers):
+            return True
+        self._send(401, {"error": "unauthorized"})
+        return False
+
     def log_message(self, fmt, *args):
         print(f"[pulse-dispatcher] {self.address_string()} {fmt % args}", flush=True)
 
@@ -308,17 +333,23 @@ class Handler(BaseHTTPRequestHandler):
         parts = [x for x in p.path.split("/") if x]
         qs    = parse_qs(p.query)
 
-        # GET /health
+        # GET /health — unauthenticated local liveness
         if parts == ["health"]:
             self._send(200, {
                 "ok": True,
                 "port": PORT,
+                "bind": BIND_HOST,
+                "auth": bool(DISPATCH_TOKEN),
                 "dispatches": len(_store),
                 "queued": len([v for v in _store.values() if v.get("state") == "queued"]),
             })
+            return
+
+        if not self._require_token():
+            return
 
         # GET /dispatch/:id
-        elif len(parts) == 2 and parts[0] == "dispatch":
+        if len(parts) == 2 and parts[0] == "dispatch":
             rec = _store_get(parts[1])
             self._send(200 if rec else 404,
                        rec if rec else {"error": "not found"})
@@ -336,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._require_token():
+            return
         p     = urlparse(self.path)
         parts = [x for x in p.path.split("/") if x]
 
@@ -411,8 +444,9 @@ if __name__ == "__main__":
     worker = threading.Thread(target=_worker, daemon=True, name="dispatch-worker")
     worker.start()
 
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"[pulse-dispatcher] listening on :{PORT}  ledger={LEDGER}", flush=True)
+    server = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
+    print(f"[pulse-dispatcher] listening on {BIND_HOST}:{PORT}  ledger={LEDGER}",
+          flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
