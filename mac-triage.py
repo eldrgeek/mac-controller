@@ -74,6 +74,8 @@ OURDAEMON_CPU = 60.0            # our daemon burning more than this %CPU
 OURDAEMON_RSS_MB = 600          # ...or leaking past this RSS (mem-pressure only)
 RELIEF_CPU = 20.0               # user-triggered relief: resumable app CPU floor
 RELIEF_RSS_MB = 800             # user-triggered relief: resumable app memory floor
+HOG_RSS_MB = 3072               # report-only: any process resident above this is a memory hog
+HOGS_LATEST = LOG_DIR / "HOGS-LATEST.txt"   # rewritten every run; empty file = no hogs
 
 # Never terminate anything whose command line matches these.
 PROTECT = re.compile(
@@ -335,6 +337,19 @@ def main():
     actions = [apply_action(c, a, p, ld_pids, args.dry_run)
                for (c, a, p, _r) in targets]
 
+    # Memory-hog report (2026-09-02). Never acts; makes the 7 GB node, the
+    # 37 GB FathomMeetingMonitor and the 5 GB Claude VM visible the day they
+    # happen instead of weeks later in a JetsamEvent post-mortem.
+    hogs = sorted((p for p in procs
+                   if p["rss_mb"] >= HOG_RSS_MB and basename(p["cmd"]) != "kernel_task"),
+                  key=lambda p: p["rss_mb"], reverse=True)
+    try:
+        HOGS_LATEST.write_text("".join(
+            f"{now()} pid={p['pid']} rss={p['rss_mb']:.0f}MB age={p['age_h']:.1f}h {p['cmd'][:110]}\n"
+            for p in hogs))
+    except OSError:
+        pass
+
     log({
         "mode": "dry-run" if args.dry_run else "apply",
         "pressure": pressure,
@@ -343,6 +358,8 @@ def main():
                      "cpu": p["cpu"], "rss_mb": round(p["rss_mb"], 0),
                      "reason": r} for (c, a, p, r) in targets],
         "actions": actions,
+        "hogs": [{"pid": p["pid"], "rss_mb": round(p["rss_mb"], 0),
+                  "age_h": round(p["age_h"], 1), "cmd": basename(p["cmd"])} for p in hogs],
     })
 
 
