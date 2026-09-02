@@ -6,8 +6,14 @@ Runs periodically (via launchd, every 5 min). When the Mac is under real
 memory/CPU pressure it terminates a NARROW allowlist of safe targets that
 Mike pre-approved:
 
-  1. Runaway Google Chrome *renderer* processes (a single tab) — never the
-     main browser, GPU, network, or utility process.
+  1. Busy Google Chrome *renderer* processes (a single tab) — REPORT ONLY
+     since 2026-09-02. This rule used to SIGTERM them and was the cause of
+     Mike's recurring "Aw, Snap! Error code: 15" tabs (15 = SIGTERM): 373
+     renderer kills between 2026-06-17 and 2026-09-02, while Chrome itself
+     recorded 0 renderer crashes. A renderer at 100% CPU is almost always the
+     FOREGROUND tab doing real work (Playmaker's editor, a PDF import), not a
+     runaway; Chrome's Memory Saver already discards idle tabs. Targets are
+     still logged so the would-be kills stay visible. See CHROME_RENDERER_ACTION.
   2. Stale / orphaned `claude` and `node` CLI processes — not MCP servers,
      not the Cowork/cc-bridge, not launchd-managed services.
   3. Our own launchd daemons (com.soma.*, com.mikewolf.*, com.mike-wolf.*,
@@ -58,7 +64,9 @@ FREE_MEM_PCT_TRIGGER = 12       # ...or free memory below 12%
 LOAD_PER_CORE_TRIGGER = 2.5     # ...or 1-min load above 2.5x core count
 
 # ---- per-target thresholds ------------------------------------------------
-CHROME_RENDERER_CPU = 80.0      # %CPU for a renderer to count as runaway
+CHROME_RENDERER_ACTION = "report"  # "term" until 2026-09-02 — killed Mike's live tabs (see docstring §1).
+                                   # Re-enable only with a foreground-tab check + a sustained multi-sample CPU test.
+CHROME_RENDERER_CPU = 80.0      # %CPU for a renderer to count as busy (report threshold)
 CHROME_RENDERER_RSS_MB = 1200   # ...or RSS above this (mem-pressure only)
 STALE_CLI_AGE_HOURS = 4         # orphaned claude/node older than this
 STALE_CLI_CPU_MAX = 5.0         # ...and effectively idle (mem-pressure only)
@@ -249,13 +257,21 @@ def find_targets(procs, ld_pids, mem_pressure):
         if PROTECT.search(cmd):
             continue
 
-        # --- 1. runaway Chrome renderer (single tab) -----------------------
+        # --- 1. busy Chrome renderer (single tab) — report only ---------------
+        # 2026-09-02: was "term". Evidence that this rule was killing the tab
+        # Mike was working in: ~/.local/share/mac-triage/launchd.out.log lines
+        # up minute-for-minute with Playmaker's crash telemetry, and Chrome's
+        # chrome://histograms/BrowserRenderProcessHost showed 28 ChildKills / 0
+        # ChildCrashes for the same session. Never terminate a renderer here
+        # without (a) proving it is not the foreground tab and (b) sustained
+        # CPU across several samples; `ps pcpu` is a recent-window average and
+        # any tab doing real work hits 100% for a few seconds.
         if "--type=renderer" in cmd and "Google Chrome" in cmd:
             if p["cpu"] >= CHROME_RENDERER_CPU:
-                targets.append(("chrome_renderer", "term", p,
+                targets.append(("chrome_renderer", CHROME_RENDERER_ACTION, p,
                                 f"renderer CPU {p['cpu']:.0f}%"))
             elif mem_pressure and p["rss_mb"] >= CHROME_RENDERER_RSS_MB:
-                targets.append(("chrome_renderer", "term", p,
+                targets.append(("chrome_renderer", CHROME_RENDERER_ACTION, p,
                                 f"renderer RSS {p['rss_mb']:.0f}MB under pressure"))
             continue
 
@@ -284,6 +300,9 @@ def find_targets(procs, ld_pids, mem_pressure):
 def apply_action(category, action, p, label_map, dry_run) -> dict:
     rec = {"action": action, "category": category, "pid": p["pid"],
            "cmd": p["cmd"][:120], "applied": False}
+    if action == "report":      # observe-only category: never signal it
+        rec["note"] = "report-only"
+        return rec
     if dry_run:
         return rec
     try:
