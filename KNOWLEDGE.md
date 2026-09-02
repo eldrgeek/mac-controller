@@ -198,3 +198,15 @@ Raw CGEvent (`press_key`) is unreliable for mode switching — keystroke goes to
 wrong app if focus hasn't settled. Fix: use osascript System Events:
   `tell application "System Events" to keystroke "2" using command down`
 This is now the default in `set_mode()`.
+
+### `cc recent --pick TITLE --inject` can pick the session that is running YOU (2026-09-02)
+
+A Claude Code session launched from Claude Desktop appears in Desktop's task
+list under its own title. On 2026-09-02 a CCc session titled "Chrome crashes on
+Mac diagnosis" ran `cc recent --status running --pick "Chrome crashes" --inject
+<handoff>` to brief what it believed was a *different* Desktop task, and the
+handoff was submitted into its own composer and came back as a user turn.
+`--cowork-safe` also copied the composer placeholder ("Type / for commands")
+to Mike's clipboard. Before injecting into a Desktop task by title, confirm it
+is not yourself: `mcp__ccd_session_mgmt__get_session self` returns the current
+session's title. A self-inject can loop if the receiving turn injects again.
