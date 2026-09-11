@@ -681,10 +681,10 @@ def _task_snapshot(win) -> tuple:
 def new_task(win, verify: bool = True) -> bool:
     """Open a new session/task appropriate for the current mode.
 
-    - Cowork: clicks 'New task \u2318N'
-    - Code:   clicks 'New session \u2318N'
-    - Chat:   clicks button containing 'New chat'
-    Falls back to \u2318N via osascript, then VERIFIES.
+    - Cowork: clicks 'New task \u2318N', falling back to plain 'New'
+    - Code:   clicks 'New session \u2318N', falling back to plain 'New'
+    - Chat:   clicks button containing 'New chat', falling back to plain 'New'
+    No osascript fallback (forbidden estate-wide, see body). VERIFIES.
 
     Returns True only when the sidebar actually changed.
 
@@ -710,27 +710,33 @@ def new_task(win, verify: bool = True) -> bool:
     a swallowed click does not.
     ------------------------------------------------------------------------
     """
-    import subprocess as _sp
     before = _task_snapshot(win) if verify else None
     mode = infer_current_mode(win)
     if mode == 'cowork':
-        ok = click_control(win, title='New task \u2318N', role='AXButton')
+        matchers = [{'title': 'New task \u2318N', 'role': 'AXButton'},
+                    {'title': 'New', 'role': 'AXButton'}]
     elif mode == 'code':
-        ok = click_control(win, title='New session \u2318N', role='AXButton')
+        matchers = [{'title': 'New session \u2318N', 'role': 'AXButton'},
+                    {'title': 'New', 'role': 'AXButton'}]
     else:
-        ok = click_control(win, contains='New chat', role='AXButton')
-    used_fallback = False
-    if not ok:
-        used_fallback = True
-        _sp.run([
-            'osascript',
-            '-e', 'tell application "Claude" to activate',
-            '-e', 'delay 0.2',
-            '-e', 'tell application "System Events" to keystroke "n" using command down',
-        ], capture_output=True, timeout=5)
+        matchers = [{'contains': 'New chat', 'role': 'AXButton'},
+                    {'title': 'New', 'role': 'AXButton'}]
+    # 2026-08-11: the app now labels this control plain 'New' in every mode
+    # (measured 2026-08-10 against the tower-watchdog respawn failures \u2014 the
+    # 'New task \u2318N'/'New session \u2318N' titles this function looked for no
+    # longer exist). 'New' is tried second so a future app version that
+    # restores the longer titles still matches them first.
+    #
+    # No osascript keystroke fallback here, on purpose: that path is forbidden
+    # estate-wide (~/.claude/CLAUDE.md "Common mistakes" #1 - it corrupts
+    # Mike's in-flight draft and stacks unsent notifications) and was also
+    # measured to misdeliver for this exact call (tower-watchdog.sh, root
+    # cause note, 2026-08-10). A click that can't find its button now fails
+    # honestly instead of falling back to a forbidden, broken path.
+    ok = click_first_match(win, matchers)
     time.sleep(0.8)
     if not verify:
-        return bool(ok or used_fallback)
+        return bool(ok)
     after = _task_snapshot(win)
     if before == (-1, None) or after == (-1, None):
         return False              # couldn't observe => can't claim

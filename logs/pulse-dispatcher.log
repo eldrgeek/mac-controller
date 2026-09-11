@@ -67,3 +67,27 @@ could not create image from display
 [pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
 [pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
 [pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] 127.0.0.1 "GET / HTTP/1.1" 404 -
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
+[pulse-dispatcher] ledger: replayed 12 entries → 4 dispatches
+[pulse-dispatcher] listening on :3340  ledger=/Users/mikewolf/Projects/SOMA/dispatch-ledger.jsonl
