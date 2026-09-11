@@ -193,3 +193,57 @@ handoff was submitted into its own composer and came back as a user turn.
 to Mike's clipboard. Before injecting into a Desktop task by title, confirm it
 is not yourself: `mcp__ccd_session_mgmt__get_session self` returns the current
 session's title. A self-inject can loop if the receiving turn injects again.
+
+## Driving debug Chrome (:9222) when Playwright's `connect_over_cdp` hangs
+
+Playwright's `connect_over_cdp` does browser-level target discovery (it
+enumerates all targets over the browser endpoint) before it hands you a page.
+Against Mike's real debug Chrome — routinely 80-100+ open targets (real tabs,
+embedded YouTube iframes, service workers, extension frames, Google Chat
+sub-frames) — that discovery step has hung repeatedly (confirmed twice,
+2026-09-10/11 mission-1 runs) with no timeout and no error, just a dead wait.
+
+**Fix: skip Playwright's browser-level layer and drive one target's own
+`webSocketDebuggerUrl` directly** with the stdlib-adjacent `websocket-client`
+package (`import websocket`, present in the default python3). This talks raw
+CDP (`Runtime.evaluate`, `Page.enable`, etc.) to exactly one page — no
+enumeration of the other 80 targets, so it connects cleanly every time this
+was tried.
+
+```python
+import websocket, json, time
+
+# 1. Open a NEW tab so you never touch Mike's real open tabs:
+#    curl -s -X PUT "http://localhost:9222/json/new?<url>"  → returns {"id": ..., "webSocketDebuggerUrl": ...}
+TAB_ID = "<id from /json/new>"
+ws = websocket.create_connection(f"ws://localhost:9222/devtools/page/{TAB_ID}", timeout=15)
+_id = 0
+def call(method, params=None, timeout=15):
+    global _id
+    _id += 1
+    ws.send(json.dumps({"id": _id, "method": method, "params": params or {}}))
+    ws.settimeout(timeout)
+    while True:
+        msg = json.loads(ws.recv())
+        if msg.get("id") == _id:
+            return msg  # ignore unrelated events in between
+
+def ev(expr):
+    r = call("Runtime.evaluate", {"expression": expr, "returnByValue": True, "awaitPromise": True})
+    return r.get("result", {}).get("result", {}).get("value")
+
+call("Page.enable"); call("Runtime.enable")
+# ... ev("document.querySelector(...)"), ev("window.scrollTo(0,1000)"), etc.
+# 2. Always close what you opened:
+#    curl -s -X PUT "http://localhost:9222/json/close/<TAB_ID>"
+# 3. Verify it's gone: curl -s http://localhost:9222/json/list  (id should be absent)
+```
+
+Rules for using this against a live production surface Mike is also using:
+open your own tab via `PUT /json/new`, never attach to an existing tab id you
+didn't open (those may be Mike's real sessions — `GET /json/list` shows tab
+titles/URLs, check before touching one). Close and re-verify-closed when done.
+This does not fix Playwright — if a future task needs Playwright specifically
+(video recording, trace viewer, accessibility tree), first try pointing it at
+a *freshly-opened, low-target-count* browser context rather than Mike's
+80+-target debug Chrome.
