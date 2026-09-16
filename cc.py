@@ -24,6 +24,7 @@ Commands:
   status [--ax]                   Ask-surface (relay+Pulse+hud) without stealing
                                   focus. AX snapshot only if Claude is already
                                   frontmost, or with --ax (activates if needed).
+  doctor [--json]                 Check setup (Accessibility, Claude running) and how to fix
   afk-status                      Show automation-lock state + live idle seconds
   afk-wait --reason "..."         Block (bounded) until team_active is granted
   afk-set-team --reason "..."     Request team_active now (fails unless idle >= threshold)
@@ -84,8 +85,9 @@ from claude_ax import (
 # POST /show or GET /wv-status there. Relay ask fields are a Pulse contract:
 # GET /hud/asks → {asks: [{id, message, createdAt, ageSeconds}]}
 # POST /hud/response/:id → {response}; do not rename those keys.
-RELAY_URL = 'http://localhost:3333'
-PULSE_URL = 'http://localhost:8088'
+# Both are optional outside SOMA. Override with env vars when the broker runs elsewhere.
+RELAY_URL = os.environ.get('CC_RELAY_URL', 'http://localhost:3333').rstrip('/')
+PULSE_URL = os.environ.get('CC_PULSE_URL', 'http://localhost:8088').rstrip('/')
 
 
 def _print(obj):
@@ -94,8 +96,21 @@ def _print(obj):
 
 
 def _require_window():
+    """Get the Claude Desktop window, or exit 1 SAYING WHY.
+
+    A bare exit 1 cannot tell "the AX click failed" from "the app isn't running".
+    """
     win = find_claude_window()
     if not win:
+        running = bool(find_claude_app())
+        if running:
+            reason = ('Claude Desktop is running but exposes no window to the '
+                      'Accessibility API (minimised, or the AX tree is not built yet). '
+                      'Run `claudectl doctor`.')
+        else:
+            reason = 'Claude Desktop is not running.'
+        print('ERROR: no Claude Desktop window - %s' % reason, file=sys.stderr)
+        _print({'status': 'no_window', 'claude_running': running, 'reason': reason})
         sys.exit(1)
     return win
 
@@ -152,7 +167,22 @@ def _afk_skip_reason(args) -> str | None:
     v = os.environ.get('CC_SKIP_AFK_GUARD', '')
     if v.strip().lower() in ('1', 'true', 'yes'):
         return 'CC_SKIP_AFK_GUARD'
+    if _single_operator():
+        return 'CLAUDECTL_AFK_GUARD=off'
     return None
+
+
+def _single_operator() -> bool:
+    """Standing opt-out for a Mac where a person runs every command by hand.
+
+    The AFK guard exists so background automation never types into Claude
+    while someone is using the Mac. A person at the keyboard is never idle, so
+    on a single-operator Mac the guard refuses every command. Setting
+    CLAUDECTL_AFK_GUARD=off records that no unattended automation shares this
+    Mac. It is quiet, unlike the per-call bypasses, because it is a setup choice
+    rather than an exception.
+    """
+    return os.environ.get('CLAUDECTL_AFK_GUARD', '').strip().lower() in ('off', '0', 'false', 'no')
 
 
 def _afk_guard_disabled(args) -> bool:
@@ -163,12 +193,16 @@ def _require_interactive(args, reason: str):
     """Refuse mutating AX work unless team_active. Returns exit code or None."""
     skip = _afk_skip_reason(args)
     if skip:
-        _log_loud_bypass('afk-skip', f'{skip} during {reason}')
+        if not skip.startswith('CLAUDECTL_AFK_GUARD'):
+            _log_loud_bypass('afk-skip', f'{skip} during {reason}')
         return None
     try:
         afk_guard.require_team_control()
     except afk_guard.AfkGuardError as e:
-        _print({'error': str(e), 'reason': reason})
+        _print({'error': str(e), 'reason': reason,
+                'hint': ('If you are running this command yourself, pass '
+                         '--no-afk-guard, or set CLAUDECTL_AFK_GUARD=off when no '
+                         'unattended automation shares this Mac. See README.')})
         return 1
     return None
 
@@ -537,7 +571,7 @@ def build_parser():
              'Also honored via CC_SKIP_AFK_GUARD=1.',
     )
     parser = argparse.ArgumentParser(
-        prog='cc',
+        prog=os.path.basename(sys.argv[0]) or 'claudectl',
         description='Claude Desktop Control — mode switching, task management, message injection',
     )
     sub = parser.add_subparsers(dest='command', required=True)
@@ -597,6 +631,9 @@ def build_parser():
     ha.add_argument('message', help='Message to display in the HUD')
     ha.add_argument('--timeout', type=int, default=30, help='Seconds to wait for response (default 30)')
 
+    doc = sub.add_parser('doctor', help='Check permissions and setup; prints how to fix each failure')
+    doc.add_argument('--json', action='store_true', help='Machine-readable output')
+
     sub.add_parser('afk-status', help='Show automation-lock state + live idle seconds')
 
     aw = sub.add_parser('afk-wait', help='Request team_active and block until granted or timeout')
@@ -649,6 +686,78 @@ def cmd_hud_ask(args):
 
     _print({'response': 'timeout'})
     return 3
+
+def cmd_doctor(args):
+    """Check that this Mac can run claudectl, and say how to fix each failure."""
+    import platform
+    checks = []
+
+    def add(name, ok, detail, fix=None, required=True):
+        checks.append({'check': name, 'ok': bool(ok), 'required': required,
+                       'detail': detail, **({'fix': fix} if (fix and not ok) else {})})
+
+    mac = platform.mac_ver()[0]
+    add('macOS', sys.platform == 'darwin', mac or sys.platform,
+        'claudectl only runs on macOS.')
+    add('Python >= 3.10', sys.version_info >= (3, 10), platform.python_version(),
+        'Install a newer Python, e.g. `brew install python` or `uv python install 3.12`.')
+    add('PyObjC bridge', True, 'ApplicationServices, AppKit and Quartz imported')
+
+    trusted = bool(AS.AXIsProcessTrusted())
+    add('Accessibility permission', trusted,
+        'granted' if trusted else 'not granted to the app running this command',
+        'System Settings > Privacy & Security > Accessibility: turn on the app you '
+        'ran this from (Terminal, iTerm, VS Code, or Claude). Quit and reopen that '
+        'app, then run `claudectl doctor` again.')
+
+    import AppKit
+    url = AppKit.NSWorkspace.sharedWorkspace().URLForApplicationWithBundleIdentifier_(
+        'com.anthropic.claudefordesktop')
+    add('Claude Desktop installed', url is not None,
+        str(url.path()) if url is not None else 'not found',
+        'Install Claude Desktop from https://claude.ai/download')
+
+    import io, contextlib
+    with contextlib.redirect_stderr(io.StringIO()):
+        app = find_claude_app()
+    add('Claude Desktop running', app is not None,
+        f'pid {app.processIdentifier()}' if app else 'not running',
+        'Open Claude Desktop and sign in.')
+
+    win = None
+    if app is not None and trusted:
+        with contextlib.redirect_stderr(io.StringIO()):
+            win = find_claude_window()
+    add('Claude window visible to Accessibility', win is not None,
+        'found' if win is not None else 'no window',
+        'Un-minimise the Claude window. If Accessibility was just granted, restart the app you ran this from.')
+
+    lock = afk_guard.read_state()
+    single = _single_operator()
+    add('AFK guard', True,
+        ('off (CLAUDECTL_AFK_GUARD=off): commands run immediately' if single else
+         f'on: inject/mode/new-task run only after {afk_guard.IDLE_THRESHOLD_S}s idle '
+         f'or with --no-afk-guard (state now: {lock.get("state")})'),
+        required=False)
+
+    relay_up, _ = _http_reachable(f'{RELAY_URL}/status', timeout=1)
+    add('Relay (optional, SOMA only)', relay_up,
+        f'{RELAY_URL} ' + ('reachable' if relay_up else 'not reachable'),
+        '`hud-ask` needs the relay. Nothing else does; ignore this if you do not use hud-ask.',
+        required=False)
+
+    ok = all(c['ok'] for c in checks if c['required'])
+    if args.json:
+        _print({'ok': ok, 'checks': checks})
+    else:
+        for c in checks:
+            mark = 'ok  ' if c['ok'] else ('FAIL' if c['required'] else 'info')
+            print(f"[{mark}] {c['check']}: {c['detail']}")
+            if 'fix' in c:
+                print(f"       fix: {c['fix']}")
+        print('\nReady.' if ok else '\nNot ready: fix the FAIL lines above, then run `claudectl doctor` again.')
+    return 0 if ok else 1
+
 
 def cmd_afk_status(args):
     """Print current AFK-guard lock state + live idle seconds."""
@@ -703,6 +812,7 @@ def main(argv=None):
         'inspect': cmd_inspect,
         'status': cmd_status,
         'hud-ask': cmd_hud_ask,
+        'doctor': cmd_doctor,
         'afk-status': cmd_afk_status,
         'afk-wait': cmd_afk_wait,
         'afk-set-team': cmd_afk_set_team,

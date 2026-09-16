@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudectl"
+version = "0.1.0"
+description = "Drive the Claude Desktop app on macOS through the Accessibility API: switch modes, open tasks, inject prompts, read state."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Mike Wolf", email = "mw@mike-wolf.com" }]
+requires-python = ">=3.10"
+classifiers = [
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Environment :: Console",
+]
+dependencies = [
+  "pyobjc-framework-ApplicationServices",
+  "pyobjc-framework-Cocoa",
+  "pyobjc-framework-Quartz",
+]
+
+[project.urls]
+Homepage = "https://github.com/eldrgeek/mac-controller"
+Issues = "https://github.com/eldrgeek/mac-controller/issues"
+
+[project.scripts]
+# Not `cc`: that name is the system C compiler (/usr/bin/cc).
+claudectl = "cc:main"
+
+[tool.setuptools]
+# The installable library is these four modules. Everything else in the repo
+# (pulse-dispatcher, mac-triage, mac-steward, launchd plists) is SOMA-internal.
+py-modules = ["cc", "claude_ax", "afk_guard", "overlay_panel"]

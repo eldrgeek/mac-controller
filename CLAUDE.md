@@ -10,6 +10,8 @@ last_reviewed: 2026-08-27
 
 **Where work happens:** `cc.py` (CLI surface) · `claude_ax.py` (AX tree access) · `pulse-dispatcher.py` (+ `com.soma.mac-triage.plist`, the dispatch daemon) · `mac-triage.py`
 
+**Packaged for outside users (2026-09-16):** `pyproject.toml` installs `cc.py`, `claude_ax.py`, `afk_guard.py` and `overlay_panel.py` as the `claudectl` command (not `cc`, which is `/usr/bin/cc`). `README.md` is the public install guide; `skills/claudectl/SKILL.md` is the outside-user skill. Tag a release (`vX.Y.Z`) when the package changes, and keep the README's pinned tag in step. `pulse-dispatcher`, `mac-triage`, `mac-steward` and the plists stay SOMA-internal and unpackaged.
+
 **Key docs**
 - [KNOWLEDGE.md](KNOWLEDGE.md) — AX tree structure, the WKWebView regression fix, and the "use this, not osascript" rules. Read it before touching any AX code.
 
@@ -30,7 +32,7 @@ last_reviewed: 2026-08-27
 **Gotchas**
 - Notify Mike with `cc hud-ask` — **never** osascript keystroke injection (it corrupts his in-flight draft and is easy to miss).
 - The Mac HUD overlay on `:3334` was **retired 2026-07-01** (2026-06-10 was a false claim that it was already done — the launchd job was still running; see `KNOWLEDGE.md:49` for the full story). Asks now display in Pulse via the relay. `cc hud-ask` does **not** POST `:3334/show`. The CLI verb is unchanged.
-- Mutating AX commands (`mode`, `new-task`, `inject`, `recent --pick`) refuse unless `team_active`. `inspect` / `status` / `hud-ask` / `afk-*` stay ungated. Opt-out: `--no-afk-guard` or `CC_SKIP_AFK_GUARD=1` (tests / emergency only) — **every skip and every `--clobber` logs to stderr and the yeshie relay notify path**. Skip is not default-on.
+- Mutating AX commands (`mode`, `new-task`, `inject`, `recent --pick`) refuse unless `team_active`. `inspect` / `status` / `hud-ask` / `afk-*` stay ungated. Opt-out: `--no-afk-guard` or `CC_SKIP_AFK_GUARD=1` (tests / emergency only), or the quiet standing `CLAUDECTL_AFK_GUARD=off` for single-operator Macs (outside users; never set it on the estate Mac) — **every per-call skip and every `--clobber` logs to stderr and the yeshie relay notify path**. Skip is not default-on.
 - Default `cc inject` preserves a real composer draft (clipboard + relay notify). `--clobber` restores overwrite (loud). `--cowork-safe` is a no-op kept for documented callers.
 - `cc status` reports relay+Pulse+`hud.up` without `get_content_root()` / activating Claude. Pass `--ax` to force an AX snapshot (activates if Claude is not already frontmost).
 - `claude_ax.py` is a library. `python3 claude_ax.py …` refuses and points at `cc.py`.

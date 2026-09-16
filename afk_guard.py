@@ -85,7 +85,7 @@ STATE_USER = 'user_active'
 STATE_TEAM = 'team_active'
 
 OVERLAY_SCRIPT = Path(__file__).resolve().parent / 'overlay_panel.py'
-PYTHON_BIN = '/opt/homebrew/bin/python3'
+PYTHON_BIN = sys.executable  # the interpreter running us, so the overlay finds PyObjC
 
 
 class AfkGuardError(RuntimeError):
@@ -223,7 +223,7 @@ def require_team_control():
         raise AfkGuardError(
             f'refused: automation-lock state is "{data["state"]}", not '
             f'"{STATE_TEAM}". Call ensure_team_control(reason=...) first, '
-            f'or wait for Mike to be idle >= {IDLE_THRESHOLD_S}s / hand off '
+            f'or wait for the user to be idle >= {IDLE_THRESHOLD_S}s / hand off '
             f'via the overlay badge.')
 
 

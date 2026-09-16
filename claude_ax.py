@@ -17,10 +17,10 @@ except ModuleNotFoundError as exc:
     missing = exc.name or 'PyObjC module'
     raise SystemExit(
         f"ERROR: Missing macOS Python bridge module '{missing}'.\n"
-        "Use a Python with PyObjC installed, for example:\n"
-        "  /opt/homebrew/bin/python3 /Users/mikewolf/Projects/yeshie/scripts/ax-inject.py --help\n"
-        "If needed, install PyObjC into that interpreter:\n"
-        "  /opt/homebrew/bin/python3 -m pip install pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa pyobjc-framework-Quartz\n"
+        "Install claudectl with its dependencies (see README):\n"
+        "  uv tool install git+https://github.com/eldrgeek/mac-controller\n"
+        "or install PyObjC into the Python you are using:\n"
+        "  python3 -m pip install pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa pyobjc-framework-Quartz\n"
     ) from exc
 
 

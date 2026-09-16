@@ -504,6 +504,32 @@ def run():
         rc = cc.cmd_inject(_Args(message='hi', no_afk_guard=False))
     results.append(check("CC_SKIP_AFK_GUARD inject proceeds", rc, 0))
 
+    # CLAUDECTL_AFK_GUARD=off: quiet standing opt-out for single-operator Macs
+    captured.clear()
+    buf = io.StringIO()
+    quiet_notify = []
+    with mock.patch.dict(os.environ, {'CLAUDECTL_AFK_GUARD': 'off'}), \
+         mock.patch.object(cc.afk_guard, 'require_team_control', refuse), \
+         mock.patch.object(cc, '_notify', lambda *a: quiet_notify.append(a)), \
+         mock.patch.object(cc, '_require_window', return_value='win'), \
+         mock.patch.object(cc, '_content_root', return_value='root'), \
+         mock.patch.object(cc, 'cowork_safe_inject', return_value=True), \
+         mock.patch.object(cc, '_print', lambda obj: captured.append(obj)), \
+         mock.patch('sys.stderr', buf):
+        rc = cc.cmd_inject(_Args(message='hi', no_afk_guard=False))
+    results.append(check("CLAUDECTL_AFK_GUARD=off inject proceeds", rc, 0))
+    results.append(check("CLAUDECTL_AFK_GUARD=off is quiet (no notify)", len(quiet_notify), 0))
+    results.append(check("CLAUDECTL_AFK_GUARD=off is quiet (no WARNING)", 'WARNING' in buf.getvalue(), False))
+
+    # Unset / other values keep the guard on, and the refusal says how to proceed
+    captured.clear()
+    with mock.patch.dict(os.environ, {'CLAUDECTL_AFK_GUARD': 'on'}), \
+         mock.patch.object(cc.afk_guard, 'require_team_control', refuse), \
+         mock.patch.object(cc, '_print', lambda obj: captured.append(obj)):
+        rc = cc.cmd_inject(_Args(message='hi', no_afk_guard=False))
+    results.append(check("CLAUDECTL_AFK_GUARD=on still refuses", rc, 1))
+    results.append(check_true("refusal carries a hint", 'no-afk-guard' in (captured[-1].get('hint') or '')))
+
     print("\n=== inject --new honors new_task bool ===")
     captured.clear()
     with mock.patch.object(cc, '_require_interactive', return_value=None), \
