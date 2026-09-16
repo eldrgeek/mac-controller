@@ -1,0 +1,45 @@
+<link rel="stylesheet" href="base.css">
+<style>
+  .search { margin:4px 6px 12px; background:#e3e3e8; border-radius:7px; padding:5px 9px; color:#8e8e93; }
+  .pane h2 { font-size:15px; margin:0 0 4px; display:flex; align-items:center; gap:10px; }
+  .pane .desc { color:#6e6e73; font-size:12px; margin:0 0 14px; }
+  .group { border:1px solid #e3e3e6; border-radius:10px; overflow:hidden; background:#fff; }
+  .row { display:flex; align-items:center; gap:10px; padding:9px 12px; border-top:1px solid #efeff2; }
+  .row:first-child { border-top:0; }
+  .appicon { width:24px; height:24px; border-radius:6px; display:grid; place-items:center; font-size:14px; color:#fff; }
+  .row .name { flex:1; }
+  .toggle { width:38px; height:22px; border-radius:11px; background:#e3e3e8; position:relative; }
+  .toggle::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); }
+  .toggle.on { background:#34c759; }
+  .toggle.on::after { left:18px; }
+  .pm { margin-top:8px; color:#6e6e73; font-size:14px; }
+</style>
+<div class="window">
+  <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="title">Accessibility</div></div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="search">🔍 Search</div>
+      <div class="item">General</div>
+      <div class="item">Appearance</div>
+      <div class="item">Accessibility</div>
+      <div class="item">Control Center</div>
+      <div class="item">Displays</div>
+      <div class="item sel">Privacy &amp; Security</div>
+      <div class="item">Desktop &amp; Dock</div>
+    </div>
+    <div class="main pane">
+      <h2><span style="color:#0a84ff">‹</span> Accessibility</h2>
+      <p class="desc">Allow the applications below to control your computer.</p>
+      <div class="group" id="group">
+        <div class="row"><div class="appicon" style="background:#10a37f">✳︎</div><div class="name"><b>ChatGPT</b></div><div class="toggle on" id="target"></div></div>
+        <div class="row"><div class="appicon" style="background:#2c2c2e">▸</div><div class="name">Terminal</div><div class="toggle"></div></div>
+      </div>
+      <div class="pm">＋ &nbsp;－</div>
+    </div>
+  </div>
+</div>
+<div class="ring" data-for="#target"></div>
+<div class="callout" data-below="#group" style="max-width:420px">④ Turn ChatGPT on. macOS may ask for your password or Touch ID.</div>
+<div class="badge">Mockup — System Settings › Privacy &amp; Security › Accessibility</div>
+<script src="ring.js"></script>

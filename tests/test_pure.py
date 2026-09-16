@@ -530,6 +530,20 @@ def run():
     results.append(check("CLAUDECTL_AFK_GUARD=on still refuses", rc, 1))
     results.append(check_true("refusal carries a hint", 'no-afk-guard' in (captured[-1].get('hint') or '')))
 
+    # `claudectl afk-guard off` stores the choice in a file; env var still wins
+    with tempfile.TemporaryDirectory() as td:
+        marker = os.path.join(td, 'afk-guard-off')
+        with mock.patch.object(cc, 'AFK_GUARD_OFF_PATH', marker), \
+             mock.patch.object(cc, '_print', lambda obj: None), \
+             mock.patch.dict(os.environ, {}, clear=True):
+            results.append(check("no file, no env -> guard on", cc._single_operator(), False))
+            cc.cmd_afk_guard(_Args(setting='off'))
+            results.append(check("afk-guard off -> single operator", cc._single_operator(), True))
+            with mock.patch.dict(os.environ, {'CLAUDECTL_AFK_GUARD': 'on'}):
+                results.append(check("env on overrides file", cc._single_operator(), False))
+            cc.cmd_afk_guard(_Args(setting='on'))
+            results.append(check("afk-guard on -> guard on", cc._single_operator(), False))
+
     print("\n=== inject --new honors new_task bool ===")
     captured.clear()
     with mock.patch.object(cc, '_require_interactive', return_value=None), \
@@ -828,6 +842,38 @@ def run():
                              pd._token_ok({'X-Pulse-Token': 'secret'}), True))
         results.append(check("token wrong deny",
                              pd._token_ok({'Authorization': 'Bearer nope'}), False))
+
+    print("\n=== Codex support: sandbox detection + codex-setup ===")
+    with mock.patch.dict(os.environ, {'CODEX_SANDBOX': 'seatbelt'}):
+        results.append(check("CODEX_SANDBOX detected", cc._sandbox_name(), 'Codex'))
+    with mock.patch.dict(os.environ, {}, clear=True):
+        results.append(check("no sandbox env -> None", cc._sandbox_name(), None))
+
+    with tempfile.TemporaryDirectory() as td:
+        rules = os.path.join(td, 'rules', 'claudectl.rules')
+        out = []
+        with mock.patch.object(cc, 'CODEX_RULES_PATH', rules), \
+             mock.patch.object(cc, '_print', lambda obj: out.append(obj)):
+            rc1 = cc.cmd_codex_setup(_Args())
+            rc2 = cc.cmd_codex_setup(_Args())
+        results.append(check("codex-setup installs", (rc1, out[0]['status']), (0, 'installed')))
+        results.append(check("codex-setup idempotent", (rc2, out[1]['status']), (0, 'already_installed')))
+        text = Path(rules).read_text()
+        results.append(check_true("rule allows claudectl prefix",
+                                  'pattern = ["claudectl"]' in text and 'decision = "allow"' in text))
+
+    out = []
+    with mock.patch.dict(os.environ, {'CODEX_SANDBOX': 'seatbelt'}), \
+         mock.patch.object(cc, '_host_app', return_value=None), \
+         mock.patch.object(cc, 'find_claude_app') as fca, \
+         mock.patch.object(cc, '_print', lambda obj: out.append(obj)):
+        rc = cc.cmd_doctor(_Args(json=True, no_prompt=True))
+    names = [c['check'] for c in out[0]['checks']]
+    results.append(check("doctor in sandbox fails", rc, 1))
+    results.append(check_true("doctor names the sandbox", 'Not inside a sandbox' in names))
+    results.append(check("doctor skips misleading app checks in sandbox",
+                         any(n.startswith('Claude Desktop') for n in names), False))
+    results.append(check("doctor in sandbox never looks for Claude", fca.called, False))
 
     passed = sum(results)
     total = len(results)

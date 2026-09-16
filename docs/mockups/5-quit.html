@@ -1,0 +1,25 @@
+<link rel="stylesheet" href="base.css">
+<style>
+  body { padding:0; }
+  .menubar { height:26px; background:rgba(246,246,248,.85); display:flex; align-items:center; gap:18px;
+    padding:0 14px; font-size:13px; border-bottom:1px solid rgba(0,0,0,.08); }
+  .menubar b { font-weight:700; }
+  .menu { position:absolute; left:36px; top:27px; width:250px; background:rgba(246,246,248,.98);
+    border-radius:8px; padding:5px; box-shadow:0 12px 36px rgba(0,0,0,.3), 0 0 0 .5px rgba(0,0,0,.2); }
+  .menu div { padding:4px 10px; border-radius:5px; display:flex; justify-content:space-between; }
+  .menu hr { border:0; border-top:1px solid #dcdce0; margin:4px 6px; }
+  .menu .hl { background:#0a84ff; color:#fff; }
+  .menu span { color:inherit; opacity:.7; }
+</style>
+<div class="menubar"><span></span><b>ChatGPT</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></div>
+<div class="menu">
+  <div>About ChatGPT</div><hr>
+  <div>Settings… <span>⌘,</span></div><hr>
+  <div>Hide ChatGPT <span>⌘H</span></div>
+  <div>Hide Others <span>⌥⌘H</span></div><hr>
+  <div class="hl">Quit ChatGPT <span>⌘Q</span></div>
+</div>
+<div class="callout" style="left:310px;top:170px">⑤ Quit ChatGPT completely (Command-Q), then open it again.<br><span style="font-weight:400">Closing the window is not enough: macOS only applies the permission to a fresh start.</span></div>
+<div class="callout" style="left:310px;top:260px;background:#1d1d1f;box-shadow:none">Then reopen the same Codex task from the sidebar and type: done</div>
+<div class="badge">Mockup of the ChatGPT app menu</div>
+<script src="ring.js"></script>

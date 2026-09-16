@@ -1,0 +1,22 @@
+<link rel="stylesheet" href="base.css">
+<style>
+  .dialog { position:absolute; left:50%; top:50%; transform:translate(-50%,-52%); width:360px;
+    background:rgba(246,246,248,.97); border-radius:14px; padding:22px 18px 16px; text-align:center;
+    box-shadow:0 24px 70px rgba(0,0,0,.35), 0 0 0 .5px rgba(0,0,0,.25); }
+  .icon { width:64px; height:64px; margin:0 auto 12px; border-radius:15px; background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.2); display:grid; place-items:center; font-size:34px; }
+  .dialog h3 { font-size:13px; margin:0 0 8px; font-weight:700; }
+  .dialog p { font-size:11.5px; margin:0 0 16px; color:#3a3a3c; }
+  .dialog .row { display:flex; gap:8px; }
+  .dialog .row span { flex:1; padding:6px 0; border-radius:7px; font-weight:500; font-size:12.5px; }
+</style>
+<div class="dialog">
+  <div class="icon">✳︎</div>
+  <h3>“ChatGPT” would like to control this computer using accessibility features.</h3>
+  <p>Grant access to this application in Privacy &amp; Security settings, located in System Settings.</p>
+  <div class="row"><span style="background:#fff;border:1px solid #d1d1d6">Deny</span><span style="background:#0a84ff;color:#fff" id="open">Open System Settings</span></div>
+</div>
+<div class="ring" data-for="#open"></div>
+<div class="callout" data-below="#open">③ Click “Open System Settings”</div>
+<div class="badge">Mockup of the macOS permission dialog</div>
+<script src="ring.js"></script>

@@ -18,9 +18,10 @@ The two common failures are a missing Accessibility permission (the user must gr
 1. **Never use osascript keystrokes or System Events to type text into Claude.** Keystrokes land in whatever window is in front and can corrupt the user's half-typed draft. `claudectl inject` sets the prompt box directly instead. (`claudectl mode` does send ⌘1/⌘2/⌘3, after bringing Claude to the front; that is the one sanctioned keystroke path.)
 2. **Read before you write.** Run `claudectl inspect composer` before `inject`. If the user has a draft, keep the default behaviour (the draft is copied to the clipboard). Pass `--clobber` only when the user asked to overwrite.
 3. **Prefer `--no-dispatch` when the prompt is consequential** (it spends money, sends messages, deletes things). It fills in the prompt box and lets the user press Send.
-4. **Respect the AFK guard.** If a command returns `refused: automation-lock state is "user_active"`, the user is at the Mac. Pass `--no-afk-guard` only when the user asked you to run the command now. Do not set `CLAUDECTL_AFK_GUARD=off` yourself; that is the user's setup choice.
+4. **Respect the AFK guard.** If a command returns `refused: automation-lock state is "user_active"`, the user is at the Mac. Pass `--no-afk-guard` only when the user asked you to run the command now. Run `claudectl afk-guard off` only after the user confirms that no scheduled job or other automation drives Claude on this Mac.
 5. **`recent --pick` can select the session you are running in.** When you run inside Claude Desktop, pick by a title specific enough to avoid your own session.
 6. **Verify, then report.** After `new-task` or `inject`, check the exit code and the JSON `status`. `new-task` exits 1 if the sidebar did not change; say so rather than claiming it opened.
+7. **In Codex, run claudectl outside the sandbox.** The sandbox blocks the Accessibility API and hides running apps. If `claudectl doctor` reports `running inside the Codex sandbox`, run `claudectl codex-setup` (with approval) and ask the user to restart the app; until then request to run each claudectl command outside the sandbox.
 
 ## Commands
 
