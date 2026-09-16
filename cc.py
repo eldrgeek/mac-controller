@@ -24,7 +24,9 @@ Commands:
   status [--ax]                   Ask-surface (relay+Pulse+hud) without stealing
                                   focus. AX snapshot only if Claude is already
                                   frontmost, or with --ax (activates if needed).
-  doctor [--json]                 Check setup (Accessibility, Claude running) and how to fix
+  doctor [--json] [--no-prompt]   Check setup (Accessibility, Claude running) and how to fix
+  codex-setup                     Let Codex run claudectl outside its sandbox
+  afk-guard [on|off|status]       Idle check setting for this Mac (off = person runs every command)
   afk-status                      Show automation-lock state + live idle seconds
   afk-wait --reason "..."         Block (bounded) until team_active is granted
   afk-set-team --reason "..."     Request team_active now (fails unless idle >= threshold)
@@ -168,7 +170,7 @@ def _afk_skip_reason(args) -> str | None:
     if v.strip().lower() in ('1', 'true', 'yes'):
         return 'CC_SKIP_AFK_GUARD'
     if _single_operator():
-        return 'CLAUDECTL_AFK_GUARD=off'
+        return 'afk-guard off'
     return None
 
 
@@ -182,7 +184,17 @@ def _single_operator() -> bool:
     Mac. It is quiet, unlike the per-call bypasses, because it is a setup choice
     rather than an exception.
     """
-    return os.environ.get('CLAUDECTL_AFK_GUARD', '').strip().lower() in ('off', '0', 'false', 'no')
+    v = os.environ.get('CLAUDECTL_AFK_GUARD', '').strip().lower()
+    if v in ('off', '0', 'false', 'no'):
+        return True
+    if v in ('on', '1', 'true', 'yes'):
+        return False
+    # `claudectl afk-guard off` stores the same choice in a file, because agents
+    # such as Codex run commands in shells that never read ~/.zshrc.
+    return os.path.exists(AFK_GUARD_OFF_PATH)
+
+
+AFK_GUARD_OFF_PATH = str(afk_guard.LOCK_DIR / 'afk-guard-off')
 
 
 def _afk_guard_disabled(args) -> bool:
@@ -193,7 +205,7 @@ def _require_interactive(args, reason: str):
     """Refuse mutating AX work unless team_active. Returns exit code or None."""
     skip = _afk_skip_reason(args)
     if skip:
-        if not skip.startswith('CLAUDECTL_AFK_GUARD'):
+        if skip != 'afk-guard off':
             _log_loud_bypass('afk-skip', f'{skip} during {reason}')
         return None
     try:
@@ -201,7 +213,7 @@ def _require_interactive(args, reason: str):
     except afk_guard.AfkGuardError as e:
         _print({'error': str(e), 'reason': reason,
                 'hint': ('If you are running this command yourself, pass '
-                         '--no-afk-guard, or set CLAUDECTL_AFK_GUARD=off when no '
+                         '--no-afk-guard, or run `claudectl afk-guard off` once if no '
                          'unattended automation shares this Mac. See README.')})
         return 1
     return None
@@ -240,6 +252,60 @@ def _ask_surface(relay: dict, pulse: dict = None, pending_asks=None, asks_err=No
         hud['up'] = False
         hud['error'] = asks_err
     return hud
+
+
+# ── Host app + sandbox detection (for doctor and codex-setup) ────────────────
+
+CODEX_RULES_PATH = os.path.expanduser('~/.codex/rules/claudectl.rules')
+CODEX_RULES = """# Installed by `claudectl codex-setup`.
+# Codex runs commands in a sandbox that blocks the macOS Accessibility API and
+# hides running apps, so claudectl cannot work inside it. This rule lets Codex
+# run commands that start with `claudectl` outside the sandbox without asking.
+prefix_rule(
+    pattern = ["claudectl"],
+    decision = "allow",
+    justification = "claudectl controls Claude Desktop through macOS Accessibility, which the sandbox blocks",
+    match = ["claudectl doctor", "claudectl inspect mode"],
+    not_match = ["claude doctor"],
+)
+"""
+
+
+def _sandbox_name():
+    """Name of the sandbox this process runs in, or None."""
+    if os.environ.get('CODEX_SANDBOX'):
+        return 'Codex'
+    if os.environ.get('APP_SANDBOX_CONTAINER_ID'):
+        return 'macOS App Sandbox'
+    return None
+
+
+def _host_app():
+    """The outermost .app that launched this process, e.g. 'ChatGPT' or 'Terminal'.
+
+    macOS grants Accessibility to that app, so doctor names it in the fix.
+    Returns None when no .app ancestor is found (ssh, launchd).
+    """
+    import subprocess
+    pid, host, seen = os.getpid(), None, set()
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        try:
+            out = subprocess.run(['ps', '-o', 'ppid=,comm=', '-p', str(pid)],
+                                 capture_output=True, text=True, timeout=2).stdout.strip()
+        except Exception:
+            break
+        if not out:
+            break
+        ppid_s, _, comm = out.partition(' ')
+        comm = comm.strip()
+        if '.app/' in comm:
+            host = os.path.basename(comm.split('.app/')[0])
+        try:
+            pid = int(ppid_s)
+        except ValueError:
+            break
+    return host
 
 
 # ── Subcommand handlers ───────────────────────────────────────────────────────
@@ -633,6 +699,15 @@ def build_parser():
 
     doc = sub.add_parser('doctor', help='Check permissions and setup; prints how to fix each failure')
     doc.add_argument('--json', action='store_true', help='Machine-readable output')
+    doc.add_argument('--no-prompt', action='store_true',
+                     help='Do not show the macOS Accessibility permission dialog')
+
+    sub.add_parser('codex-setup',
+                   help='Let Codex run claudectl outside its sandbox (writes ~/.codex/rules/claudectl.rules)')
+
+    ag = sub.add_parser('afk-guard',
+                        help='Turn the idle check off for a Mac where a person runs every command, or back on')
+    ag.add_argument('setting', choices=['on', 'off', 'status'], nargs='?', default='status')
 
     sub.add_parser('afk-status', help='Show automation-lock state + live idle seconds')
 
@@ -687,6 +762,20 @@ def cmd_hud_ask(args):
     _print({'response': 'timeout'})
     return 3
 
+def _doctor_report(args, checks):
+    ok = all(c['ok'] for c in checks if c['required'])
+    if args.json:
+        _print({'ok': ok, 'checks': checks})
+    else:
+        for c in checks:
+            mark = 'ok  ' if c['ok'] else ('FAIL' if c['required'] else 'info')
+            print(f"[{mark}] {c['check']}: {c['detail']}")
+            if 'fix' in c:
+                print(f"       fix: {c['fix']}")
+        print('\nReady.' if ok else '\nNot ready: fix the FAIL lines above, then run `claudectl doctor` again.')
+    return 0 if ok else 1
+
+
 def cmd_doctor(args):
     """Check that this Mac can run claudectl, and say how to fix each failure."""
     import platform
@@ -703,19 +792,41 @@ def cmd_doctor(args):
         'Install a newer Python, e.g. `brew install python` or `uv python install 3.12`.')
     add('PyObjC bridge', True, 'ApplicationServices, AppKit and Quartz imported')
 
+    host = _host_app()
+    sandbox = _sandbox_name()
+    if sandbox:
+        add('Not inside a sandbox', False, f'running inside the {sandbox} sandbox',
+            ('The sandbox blocks the Accessibility API and hides running apps, so the '
+             'checks below cannot be trusted. In Codex, run `claudectl codex-setup` '
+             '(approve it when asked), quit and reopen the app, then run '
+             '`claudectl doctor` again. Until then, approve running claudectl '
+             'outside the sandbox when Codex asks.'))
+
+    if sandbox:
+        return _doctor_report(args, checks)
+
     trusted = bool(AS.AXIsProcessTrusted())
+    if not trusted and not args.no_prompt:
+        # Shows macOS's "<app> would like to control this computer" dialog and
+        # adds the app to the Accessibility list, so the user only flips a switch.
+        try:
+            AS.AXIsProcessTrustedWithOptions({AS.kAXTrustedCheckOptionPrompt: True})
+        except Exception:
+            pass
     add('Accessibility permission', trusted,
-        'granted' if trusted else 'not granted to the app running this command',
-        'System Settings > Privacy & Security > Accessibility: turn on the app you '
-        'ran this from (Terminal, iTerm, VS Code, or Claude). Quit and reopen that '
-        'app, then run `claudectl doctor` again.')
+        'granted' + (f' to {host}' if host else '') if trusted
+        else 'not granted to ' + (host or 'the app you ran this from'),
+        ('System Settings > Privacy & Security > Accessibility: turn on '
+         + (f'"{host}"' if host else 'the app you ran this from (Terminal, iTerm, ChatGPT, Claude, ...)')
+         + f'. Then quit {host or "that app"} completely (Command-Q), reopen it, and run '
+         '`claudectl doctor` again.'))
 
     import AppKit
     url = AppKit.NSWorkspace.sharedWorkspace().URLForApplicationWithBundleIdentifier_(
         'com.anthropic.claudefordesktop')
     add('Claude Desktop installed', url is not None,
         str(url.path()) if url is not None else 'not found',
-        'Install Claude Desktop from https://claude.ai/download')
+        'Install Claude Desktop from https://claude.ai/download, open it, and sign in.')
 
     import io, contextlib
     with contextlib.redirect_stderr(io.StringIO()):
@@ -730,12 +841,13 @@ def cmd_doctor(args):
             win = find_claude_window()
     add('Claude window visible to Accessibility', win is not None,
         'found' if win is not None else 'no window',
-        'Un-minimise the Claude window. If Accessibility was just granted, restart the app you ran this from.')
+        'Un-minimise the Claude window. If Accessibility was just granted, quit and reopen '
+        f'{host or "the app you ran this from"}.')
 
     lock = afk_guard.read_state()
     single = _single_operator()
     add('AFK guard', True,
-        ('off (CLAUDECTL_AFK_GUARD=off): commands run immediately' if single else
+        ('off: commands run immediately (`claudectl afk-guard on` to restore)' if single else
          f'on: inject/mode/new-task run only after {afk_guard.IDLE_THRESHOLD_S}s idle '
          f'or with --no-afk-guard (state now: {lock.get("state")})'),
         required=False)
@@ -746,17 +858,52 @@ def cmd_doctor(args):
         '`hud-ask` needs the relay. Nothing else does; ignore this if you do not use hud-ask.',
         required=False)
 
-    ok = all(c['ok'] for c in checks if c['required'])
-    if args.json:
-        _print({'ok': ok, 'checks': checks})
-    else:
-        for c in checks:
-            mark = 'ok  ' if c['ok'] else ('FAIL' if c['required'] else 'info')
-            print(f"[{mark}] {c['check']}: {c['detail']}")
-            if 'fix' in c:
-                print(f"       fix: {c['fix']}")
-        print('\nReady.' if ok else '\nNot ready: fix the FAIL lines above, then run `claudectl doctor` again.')
-    return 0 if ok else 1
+    return _doctor_report(args, checks)
+
+
+def cmd_codex_setup(args):
+    """Install the Codex rule that lets Codex run claudectl outside its sandbox."""
+    path = CODEX_RULES_PATH
+    existing = None
+    try:
+        with open(path) as f:
+            existing = f.read()
+    except OSError:
+        pass
+    if existing == CODEX_RULES:
+        _print({'status': 'already_installed', 'path': path})
+        return 0
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(CODEX_RULES)
+    except OSError as e:
+        _print({'status': 'error', 'path': path, 'error': str(e),
+                'hint': 'Codex blocked the write. Approve running this command outside the sandbox.'})
+        return 1
+    _print({'status': 'installed', 'path': path,
+            'next': 'Quit Codex completely and reopen it so it loads the rule.'})
+    return 0
+
+
+def cmd_afk_guard(args):
+    """Turn the AFK guard off or on for this Mac, or show its setting."""
+    path = AFK_GUARD_OFF_PATH
+    if args.setting == 'off':
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write('The AFK guard is off: no unattended automation drives Claude on this Mac.\n'
+                    'Remove this file, or run `claudectl afk-guard on`, to turn it back on.\n')
+    elif args.setting == 'on':
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+    env = os.environ.get('CLAUDECTL_AFK_GUARD', '')
+    _print({'afk_guard': 'off' if _single_operator() else 'on',
+            'file': path if os.path.exists(path) else None,
+            'env_CLAUDECTL_AFK_GUARD': env or None})
+    return 0
 
 
 def cmd_afk_status(args):
@@ -813,6 +960,8 @@ def main(argv=None):
         'status': cmd_status,
         'hud-ask': cmd_hud_ask,
         'doctor': cmd_doctor,
+        'codex-setup': cmd_codex_setup,
+        'afk-guard': cmd_afk_guard,
         'afk-status': cmd_afk_status,
         'afk-wait': cmd_afk_wait,
         'afk-set-team': cmd_afk_set_team,

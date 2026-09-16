@@ -1,0 +1,30 @@
+<link rel="stylesheet" href="base.css">
+<div class="window">
+  <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="title">ChatGPT — Codex</div></div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="item">New chat</div>
+      <div class="item sel">Codex</div>
+      <div class="label">Tasks</div>
+      <div class="item">Playmaker notes</div>
+      <div class="item">Scene 4 rewrite</div>
+    </div>
+    <div class="main">
+      <div style="color:#8e8e93;font-size:12px">New Codex task</div>
+      <div class="composer" id="target" style="position:relative">
+        <div class="text">Set up claudectl on this Mac for me. claudectl lets you control the Claude Desktop app. Work through these steps in order, and ask for my approval whenever a step has to run outside your sandbox or use the network.
+
+1. Check that Claude Desktop is installed (/Applications/Claude.app). …
+2. If `uv --version` fails, install uv: …
+3. Install claudectl: uv tool install git+https://github.com/eldrgeek/mac-controller@v0.1.1
+4. Run: claudectl codex-setup
+…</div>
+        <div class="send">↑</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="ring" data-for="#target"></div>
+<div class="callout" data-above="#target">① Paste the setup prompt here, then press Return</div>
+<div class="badge">Mockup — your window may look slightly different</div>
+<script src="ring.js"></script>

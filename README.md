@@ -13,6 +13,8 @@ When that happens, `claudectl doctor` and `claudectl inspect buttons` show what 
 
 _Maintained by Mike Wolf with Claude (Anthropic). Packaged for outside users 2026-09-16 by Claude Opus 5 at Mike's request._
 
+**Use Codex in the ChatGPT app?** Follow the picture-by-picture guide instead: [Set up claudectl with Codex](docs/setup-with-codex.md). Codex does the installing.
+
 ---
 
 ## Requirements
@@ -36,17 +38,17 @@ Close and reopen your terminal afterwards, so the `uv` command is on your PATH.
 ### 2. Install claudectl
 
 ```bash
-uv tool install git+https://github.com/eldrgeek/mac-controller@v0.1.0
+uv tool install git+https://github.com/eldrgeek/mac-controller@v0.1.1
 ```
 
 This puts a `claudectl` command on your PATH, in its own isolated environment.
-If you prefer `pipx`, `pipx install git+https://github.com/eldrgeek/mac-controller@v0.1.0` does the same thing.
+If you prefer `pipx`, `pipx install git+https://github.com/eldrgeek/mac-controller@v0.1.1` does the same thing.
 
 ### 3. Grant Accessibility permission
 
 macOS only lets an app control other apps after you allow it.
 The permission belongs to the app you run `claudectl` from, not to `claudectl` itself.
-That app is Terminal, iTerm, VS Code, or Claude Desktop if you run it from Claude Code inside the Desktop app.
+That app is Terminal, iTerm, VS Code, ChatGPT if you use Codex there, or Claude Desktop if you run it from Claude Code inside the Desktop app. `claudectl doctor` names it for you.
 
 1. Open **System Settings → Privacy & Security → Accessibility**.
 2. Turn on the app you run commands from. If it is not listed, click **+** and add it.
@@ -70,13 +72,13 @@ The gate exists so that unattended automation never types into Claude while a pe
 A person running commands by hand is never idle, so the gate refuses them. You have two ways through it:
 
 - **For one command:** add `--no-afk-guard`. It prints a warning and shows a notification each time, on purpose.
-- **For a Mac where you run every command yourself:** add this line to `~/.zshrc`, then open a new terminal:
+- **For a Mac where you run every command yourself:** run this once.
 
   ```bash
-  export CLAUDECTL_AFK_GUARD=off
+  claudectl afk-guard off
   ```
 
-  Use the standing setting only if no scheduled job or background agent drives Claude on this Mac.
+  Use it only if no scheduled job or background agent drives Claude on this Mac. `claudectl afk-guard on` restores the check. The environment variable `CLAUDECTL_AFK_GUARD=off` or `=on` overrides the stored setting for one shell.
 
 ---
 
@@ -86,7 +88,9 @@ Every command except `doctor` prints JSON (`doctor --json` does too) and exits `
 
 | Command | What it does |
 |---|---|
-| `claudectl doctor` | Checks permissions and setup, and prints the fix for each failure. |
+| `claudectl doctor` | Checks permissions and setup, names the app that needs Accessibility permission, and prints the fix for each failure. If that app has no permission yet, it also opens the macOS permission dialog (`--no-prompt` skips it). |
+| `claudectl codex-setup` | Lets Codex run `claudectl` outside its sandbox. |
+| `claudectl afk-guard off` | Turns off the idle check on a Mac where a person runs every command. `on` restores it. |
 | `claudectl inspect` | Summary: current mode, selected session, composer state, recent sessions. |
 | `claudectl inspect mode` | Which mode is showing: `chat`, `cowork` or `code`. |
 | `claudectl inspect sessions` | Sidebar sessions and which one is selected. |
@@ -130,18 +134,27 @@ Install the skill so Claude knows the commands and the safety rules:
 
 ```bash
 mkdir -p ~/.claude/skills/claudectl
-curl -fsSL https://raw.githubusercontent.com/eldrgeek/mac-controller/v0.1.0/skills/claudectl/SKILL.md \
+curl -fsSL https://raw.githubusercontent.com/eldrgeek/mac-controller/v0.1.1/skills/claudectl/SKILL.md \
   -o ~/.claude/skills/claudectl/SKILL.md
 ```
 
 Then ask Claude, for example: "Use claudectl to open a new Cowork task and ask it to tidy my Downloads folder."
+
+## Use it from Codex
+
+Codex runs commands in a sandbox that blocks the Accessibility API, so `claudectl` cannot work inside it.
+`claudectl codex-setup` writes `~/.codex/rules/claudectl.rules`, a Codex rule that lets commands starting with `claudectl` run outside the sandbox without asking.
+Restart Codex after running it.
+Accessibility permission then belongs to the ChatGPT app, or to Terminal if you run the Codex CLI there.
+The full walkthrough with pictures is [docs/setup-with-codex.md](docs/setup-with-codex.md).
+Codex reads the same skill file as Claude Code; install it at `~/.codex/skills/claudectl/SKILL.md`.
 
 ## Use it from Python
 
 Run your script with the package available (no separate install needed):
 
 ```bash
-uv run --with "claudectl @ git+https://github.com/eldrgeek/mac-controller@v0.1.0" python my_script.py
+uv run --with "claudectl @ git+https://github.com/eldrgeek/mac-controller@v0.1.1" python my_script.py
 ```
 
 where `my_script.py` contains, for example:
@@ -166,6 +179,7 @@ The functions in `claude_ax.py` are the stable surface. Read [KNOWLEDGE.md](KNOW
 | `inspect` returns almost nothing | Claude Desktop builds its accessibility tree only while it is the front app. `claudectl` brings it forward and waits; if that is interrupted, run the command again. |
 | `refused: automation-lock state is "user_active"` | The AFK guard is on. See step 5 of Install. |
 | A command that used to work fails after a Claude Desktop update | The app renamed or moved a control. Run `claudectl inspect buttons`, then open an issue with the output. |
+| `doctor` says `running inside the Codex sandbox` | Run `claudectl codex-setup`, restart Codex, and run the check again. Until then, approve running `claudectl` outside the sandbox. |
 | `hud-ask` says `HUD not reachable` | `hud-ask` needs a separate relay service that only exists in Mike's SOMA setup. Outside it, `hud-ask` is not usable. |
 
 ## Update or remove

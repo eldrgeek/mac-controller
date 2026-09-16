@@ -1,0 +1,28 @@
+<link rel="stylesheet" href="base.css">
+<div class="window">
+  <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="title">ChatGPT — Codex</div></div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="item">New chat</div>
+      <div class="item sel">Codex</div>
+      <div class="label">Tasks</div>
+      <div class="item sel" style="background:#e8e8ee">Set up claudectl</div>
+    </div>
+    <div class="main">
+      <div class="bubble-user">Set up claudectl on this Mac. Follow these steps in order…</div>
+      <div class="agent">Installing claudectl. This step writes a rule file in your Codex settings folder, which is outside my sandbox, so I need your approval.</div>
+      <div id="card" style="margin-top:16px;border:1px solid #d8d8de;border-radius:12px;padding:14px 16px;background:#fafafc;position:relative">
+        <div style="font-weight:600;margin-bottom:6px">Allow Codex to run this command?</div>
+        <div class="mono" style="background:#f0f0f3;border-radius:6px;padding:8px 10px;margin-bottom:12px">claudectl codex-setup</div>
+        <span class="btn primary" id="target">Approve</span>
+        <span class="btn" style="margin-left:6px">Approve for this session</span>
+        <span class="btn" style="margin-left:6px">Deny</span>
+      </div>
+      <div class="composer"><div class="text" style="color:#8e8e93">Ask Codex anything</div><div class="send">↑</div></div>
+    </div>
+  </div>
+</div>
+<div class="ring" data-for="#target"></div>
+<div class="callout" data-below="#card">② Check the command matches a step you pasted, then Approve (about 4 times)</div>
+<div class="badge">Mockup — Codex's exact wording and buttons may differ</div>
+<script src="ring.js"></script>
