@@ -33,4 +33,4 @@ claudectl = "cc:main"
 [tool.setuptools]
 # The installable library is these four modules. Everything else in the repo
 # (pulse-dispatcher, mac-triage, mac-steward, launchd plists) is SOMA-internal.
-py-modules = ["cc", "claude_ax", "afk_guard", "overlay_panel"]
+py-modules = ["cc", "claude_ax", "afk_guard", "overlay_panel", "automation_log"]

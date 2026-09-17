@@ -24,7 +24,33 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 
+try:
+    import automation_log as _alog
+except Exception:  # logging is optional; automation must still run
+    _alog = None
+
 CLAUDE_BUNDLE_ID = 'com.anthropic.claudefordesktop'
+
+
+def _log_action(kind, target=None, started_at=None):
+    """Explicit log line for actions PyObjC wrapping cannot see (activation, osascript)."""
+    try:
+        if _alog and _alog_live:
+            dur = (time.time() - started_at) * 1000 if started_at else None
+            _alog.record(kind, target=target, duration_ms=dur, started_at=started_at)
+    except Exception:
+        pass
+
+
+# Every AXPress / AXSetValue / CGEventPost in this process (cc.py included) writes
+# one line to ~/Library/Logs/soma-automation/actions.jsonl. See automation_log.py.
+# _alog_live is False under mocked PyObjC (unit tests), so tests never write the real log.
+_alog_live = False
+try:
+    if _alog:
+        _alog_live = bool(_alog.install(AS, Quartz, AppKit))
+except Exception:
+    _alog_live = False
 
 
 def get_attr(elem, attr):
@@ -439,7 +465,9 @@ def activate_claude():
     options = getattr(AppKit, 'NSApplicationActivateIgnoringOtherApps', 1)
     activate = getattr(app, 'activateWithOptions_', None)
     if activate:
+        t0 = time.time()
         activate(options)
+        _log_action('activate', 'Claude', t0)
     return True
 
 
@@ -470,6 +498,7 @@ def get_content_root(app_elem, timeout=5.0):
     # Primary: AppKit activation
     ws = AppKit.NSWorkspace.sharedWorkspace()
     activated = False
+    t_activate = time.time()
     for running_app in ws.runningApplications():
         if running_app.bundleIdentifier() == CLAUDE_BUNDLE_ID:
             activated = running_app.activateWithOptions_(
@@ -482,6 +511,7 @@ def get_content_root(app_elem, timeout=5.0):
          'tell application "Claude" to activate'],
         capture_output=True, timeout=3,
     )
+    _log_action('activate', 'Claude', t_activate)
 
     # Give the window time to take focus before polling
     time.sleep(0.4)
@@ -550,12 +580,14 @@ def set_mode(mode: str) -> bool:
         print(f'ERROR: unknown mode {mode!r}. Use chat, cowork, or code.', file=sys.stderr)
         return False
     # osascript is more reliable than CGEvent for focus-sensitive keystrokes
+    t0 = time.time()
     result = _sp.run([
         'osascript',
         '-e', 'tell application "Claude" to activate',
         '-e', 'delay 0.4',
         '-e', f'tell application "System Events" to keystroke "{key}" using command down',
     ], capture_output=True, timeout=5)
+    _log_action('osascript_keystroke', 'Claude', t0)
     time.sleep(0.6)
     return result.returncode == 0
 
