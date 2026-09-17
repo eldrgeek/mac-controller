@@ -264,3 +264,24 @@ This does not fix Playwright — if a future task needs Playwright specifically
 (video recording, trace viewer, accessibility tree), first try pointing it at
 a *freshly-opened, low-target-count* browser context rather than Mike's
 80+-target debug Chrome.
+
+## Automation action log (added 2026-09-17)
+
+Mike's ruling of 2026-09-16: human active time must exclude automation. Step 1 is
+that automation logs its own actions. `automation_log.py` writes one JSONL line per
+automated action to `~/Library/Logs/soma-automation/actions.jsonl`. The Yeshie relay
+writes the same format. The format is documented in the module docstring.
+
+- **Where it hooks.** `claude_ax.py` calls `automation_log.install(AS, Quartz, AppKit)`
+  at import. That wraps `AXUIElementPerformAction`, `AXUIElementSetAttributeValue` and
+  `CGEventPost` on the PyObjC module objects, so every call site in the process is
+  covered, including the direct `AS.*` calls in `cc.py`. A key or click logs one line
+  (on the up event). App activation and the `osascript` keystroke in `set_mode` are
+  not PyObjC calls, so they log explicitly through `_log_action`.
+- **What is never logged:** typed text, AX values, selectors, URLs with a query string.
+- **Failure-safe:** every logging path catches all exceptions. `SOMA_AUTOMATION_LOG=0`
+  disables it. `SOMA_AUTOMATION_LOG_DIR` redirects it (tests use a temp dir).
+- **Tests never write the real log:** under mocked PyObjC `install` returns False.
+- **Self-test without touching any UI:** `python3 automation_log.py selftest` writes one
+  `dry_run` line. Note that `cc status` is not a read-only probe: it activates Claude.
+- **Consumer:** `~/Projects/yeshid-control-plane/inventory/active_time.py`.
