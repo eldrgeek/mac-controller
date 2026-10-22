@@ -36,6 +36,7 @@ Usage:
 import argparse
 import json
 import os
+import plistlib
 import re
 import signal
 import subprocess
@@ -239,6 +240,24 @@ def launchd_pid_labels() -> dict[int, str]:
     return mapping
 
 
+_KEEPALIVE: dict[str, bool] = {}
+
+
+def is_keepalive(label: str) -> bool:
+    """True when the job's plist asks launchd to keep it running.
+
+    A plist we cannot read counts as a daemon, which keeps the old behavior.
+    """
+    if label not in _KEEPALIVE:
+        path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        try:
+            with path.open("rb") as f:
+                _KEEPALIVE[label] = bool(plistlib.load(f).get("KeepAlive"))
+        except Exception:
+            _KEEPALIVE[label] = True
+    return _KEEPALIVE[label]
+
+
 # ---------------------------------------------------------------------------
 # decide + act
 # ---------------------------------------------------------------------------
@@ -278,9 +297,15 @@ def find_targets(procs, ld_pids, mem_pressure):
             continue
 
         # --- 3. our launchd daemon eating compute --------------------------
+        # 2026-10-21: the CPU rule now applies only to KeepAlive daemons. A
+        # scheduled one-shot job (StartInterval/StartCalendarInterval) that is
+        # busy is doing its work and exits by itself; kickstart -k only throws
+        # that work away. com.soma.ai-activity.tick needs several minutes at
+        # ~70% CPU to re-read its logs after a forced reboot, and this rule
+        # killed it every run (15 kills in 90 min), so it never caught up.
         if p["pid"] in ld_pids:
             label = ld_pids[p["pid"]]
-            if p["cpu"] >= OURDAEMON_CPU:
+            if p["cpu"] >= OURDAEMON_CPU and is_keepalive(label):
                 targets.append(("our_daemon", "kickstart", p,
                                 f"{label} CPU {p['cpu']:.0f}%"))
             elif mem_pressure and p["rss_mb"] >= OURDAEMON_RSS_MB:
