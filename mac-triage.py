@@ -34,6 +34,8 @@ Usage:
   mac-triage.py --relief    # user-triggered cleanup of resumable hog apps
 """
 import argparse
+import ctypes
+import ctypes.util
 import json
 import os
 import plistlib
@@ -206,6 +208,36 @@ def etime_to_hours(etime: str) -> float:
     return days * 24 + h + m / 60 + s / 3600
 
 
+class _RusageV2(ctypes.Structure):
+    _fields_ = ([("uuid", ctypes.c_uint8 * 16)]
+                + [(n, ctypes.c_uint64) for n in (
+                    "user", "system", "pkg_idle_wkups", "interrupt_wkups", "pageins",
+                    "wired", "resident", "phys_footprint", "start_abstime", "proc_exit_abstime",
+                    "child_user", "child_system", "child_pkg_idle_wkups", "child_interrupt_wkups",
+                    "child_pageins", "child_elapsed_abstime", "diskio_bytesread", "diskio_byteswritten")]
+                + [("pad", ctypes.c_uint64 * 32)])  # room for later struct versions
+
+
+try:
+    _LIBC = ctypes.CDLL(ctypes.util.find_library("c"))
+except Exception:
+    _LIBC = None
+
+
+def footprint_mb(pid: int):
+    """Memory footprint including compressed pages, or None (e.g. root processes).
+
+    RSS alone misses most of a runaway: on 2026-10-21 System Events reached
+    62 GB of footprint while only ~0.4 GB was resident, and the Mac froze.
+    """
+    if _LIBC is None:
+        return None
+    ru = _RusageV2()
+    if _LIBC.proc_pid_rusage(pid, 2, ctypes.byref(ru)) != 0:
+        return None
+    return ru.phys_footprint / (1024 * 1024)
+
+
 def list_procs() -> list[dict]:
     out = sh(["ps", "-axo", "pid=,ppid=,pcpu=,rss=,etime=,command="])
     procs = []
@@ -215,11 +247,14 @@ def list_procs() -> list[dict]:
         if not m:
             continue
         pid, ppid, pcpu, rss, etime, cmd = m.groups()
+        rss_mb = int(rss) / 1024
+        fp = footprint_mb(int(pid))
         procs.append({
             "pid": int(pid),
             "ppid": int(ppid),
             "cpu": float(pcpu),
-            "rss_mb": int(rss) / 1024,
+            "rss_mb": rss_mb,
+            "mem_mb": max(rss_mb, fp) if fp is not None else rss_mb,
             "age_h": etime_to_hours(etime),
             "cmd": cmd,
         })
@@ -365,12 +400,15 @@ def main():
     # Memory-hog report (2026-09-02). Never acts; makes the 7 GB node, the
     # 37 GB FathomMeetingMonitor and the 5 GB Claude VM visible the day they
     # happen instead of weeks later in a JetsamEvent post-mortem.
+    # 2026-10-21: judged on footprint (mem_mb, includes compressed pages), not
+    # RSS, and the log keeps the command line so a runaway node can be named.
     hogs = sorted((p for p in procs
-                   if p["rss_mb"] >= HOG_RSS_MB and basename(p["cmd"]) != "kernel_task"),
-                  key=lambda p: p["rss_mb"], reverse=True)
+                   if p["mem_mb"] >= HOG_RSS_MB and basename(p["cmd"]) != "kernel_task"),
+                  key=lambda p: p["mem_mb"], reverse=True)
     try:
         HOGS_LATEST.write_text("".join(
-            f"{now()} pid={p['pid']} rss={p['rss_mb']:.0f}MB age={p['age_h']:.1f}h {p['cmd'][:110]}\n"
+            f"{now()} pid={p['pid']} mem={p['mem_mb']:.0f}MB rss={p['rss_mb']:.0f}MB "
+            f"age={p['age_h']:.1f}h {p['cmd'][:160]}\n"
             for p in hogs))
     except OSError:
         pass
@@ -383,8 +421,8 @@ def main():
                      "cpu": p["cpu"], "rss_mb": round(p["rss_mb"], 0),
                      "reason": r} for (c, a, p, r) in targets],
         "actions": actions,
-        "hogs": [{"pid": p["pid"], "rss_mb": round(p["rss_mb"], 0),
-                  "age_h": round(p["age_h"], 1), "cmd": basename(p["cmd"])} for p in hogs],
+        "hogs": [{"pid": p["pid"], "mem_mb": round(p["mem_mb"], 0), "rss_mb": round(p["rss_mb"], 0),
+                  "age_h": round(p["age_h"], 1), "cmd": p["cmd"][:160]} for p in hogs],
     })
 
 
