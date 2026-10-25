@@ -52,7 +52,25 @@ import time
 import urllib.error
 import urllib.request
 
-import ApplicationServices as AS
+PYOBJC_PYTHONS = ('/opt/homebrew/bin/python3', '/opt/homebrew/bin/python3.14', '/opt/homebrew/bin/python3.13',
+                  '/opt/homebrew/bin/python3.12', '/usr/local/bin/python3', '/usr/bin/python3')
+
+try:
+    import ApplicationServices as AS
+except ModuleNotFoundError:
+    # A Homebrew upgrade moves python3 to a minor version with no PyObjC yet:
+    # re-run under the first interpreter that has it (once, guarded by CC_REEXEC).
+    import subprocess
+    if not os.environ.get('CC_REEXEC'):
+        for py in PYOBJC_PYTHONS:
+            if not os.access(py, os.X_OK) or os.path.realpath(py) == os.path.realpath(sys.executable):
+                continue
+            if subprocess.run([py, '-c', 'import ApplicationServices, AppKit, objc'],
+                              capture_output=True).returncode == 0:
+                os.environ['CC_REEXEC'] = '1'
+                os.execv(py, [py, os.path.abspath(__file__)] + sys.argv[1:])
+    sys.exit('cc.py: no python3 here has PyObjC. Install it with: python3 -m pip install '
+             'pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa pyobjc-framework-Quartz')
 
 import afk_guard
 from claude_ax import (
